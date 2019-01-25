@@ -1,0 +1,652 @@
+#+TITLE: Global Settlement
+#+DATE: <2019-01-24 Thu>
+#+AUTHOR:
+#+OPTIONS: ':nil *:t -:t ::t <:t H:4 \n:nil ^:t arch:headline
+#+OPTIONS: author:t c:nil creator:comment d:(not "LOGBOOK") date:t
+#+OPTIONS: e:t email:nil f:t inline:t num:nil p:nil pri:nil stat:t
+#+OPTIONS: tags:t tasks:t tex:t timestamp:t toc:nil todo:t |:t
+#+OPTIONS: html-postamble:nil
+#+DESCRIPTION:
+#+EXCLUDE_TAGS: noexport
+#+KEYWORDS:
+#+LANGUAGE: en
+#+SELECT_TAGS: export
+#+PROPERTY: header-args :results output :exports both :noweb strip-export :tangle no
+#+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="./body.css"/>
+#+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="./theme.css"/>
+#+HTML_HEAD_EXTRA: <script>window.MathJax || document.write('<script type="text/x-mathjax-config">MathJax.Hub.Config({"HTML-CSS":{imageFont:null}});<\/script><script src="/home/lev/src/MathJax/MathJax.js?config=TeX-AMS_HTML-full"><\/script>')</script>
+
+#+OPTIONS: tex:mathjax
+# Local Variables:
+# org-confirm-babel-evaluate: nil
+# org-babel-exp-code-template: "#+BEGIN_SRC %lang%switches%flags\n%body\n#+END_SRC"
+# End:
+
+#+NAME: solidity-skeleton
+#+BEGIN_SRC sol :tangle "src/cage.sol" :exports none
+  /// cage.sol -- global settlement engine
+
+  // <<license>>
+
+  pragma sol ^0.4.24;
+
+  contract VatLike {
+      function dai(address lad) public;
+      function flux(bytes32 ilk, bytes32 src, bytes32 dst, int256 rad) public;
+      function tune(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
+      function grab(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
+  }
+  contract PitLike {
+      function cage() public;
+  }
+  contract CatLike {
+      function cage() public;
+  }
+  contract VowLike {
+      function cage(uint256 dump) public;
+  }
+  contract DripLike {
+      function cage() public;
+  }
+
+  contract End {
+      // --- Auth ---
+      <<auth>>
+
+      // --- Data ---
+      <<data>>
+
+      // --- Init ---
+      <<init>>
+
+      // --- Math ---
+      <<math>>
+
+      // --- Administration ---
+      <<file>>
+
+      <<cage>>
+
+      <<cage-ilk>>
+
+      <<skim>>
+
+      <<shut>>
+
+      <<shop>>
+
+      <<pack>>
+
+      <<cash>>
+  }
+#+END_SRC
+
+#+NAME: act-skeleton
+#+BEGIN_SRC act :tangle "act/cage.act" :exports none
+   // <<license>>
+
+   <<act-file>>
+
+   <<act-cage>>
+
+   <<act-cage-ilk>>
+
+   <<act-skim>>
+
+   <<act-shut>>
+
+   <<act-shop>>
+
+   <<act-pack>>
+
+   <<act-cash>>
+#+END_SRC
+
+* License
+#+NAME: license
+#+BEGIN_SRC fundamental
+  Copyright (C) 2018 Rain <rainbreak@riseup.net>
+  Copyright (C) 2018 Lev Livnev <lev@liv.nev.org.uk>
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#+END_SRC
+
+
+* Setup
+We will require safe addition and =ray= fixed-point multiplication:
+#+NAME: math
+#+BEGIN_SRC sol
+  function add(uint x, uint y) internal pure returns (uint z) {
+      z = x + y;
+      require(z >= x);
+  }
+
+  uint constant ONE = 10 ** 27;
+  function rmul(uint x, uint y) internal pure returns (uint z) {
+      z = x * y;
+      require(y == 0 || z / y == x);
+      z = z / ONE;
+  }
+#+END_SRC
+
+The storage layout of the =End= is as follows:
+#+NAME: data
+#+BEGIN_SRC sol
+  VatLike  public vat;
+  PitLike  public pit;
+  CatLike  public cat;
+  VowLike  public vow;
+  DripLike public drip;
+  uint256  public live;
+
+  mapping (address => uint256)                      public dai;
+  mapping (bytes32 => uint256)                      public tags;
+  mapping (bytes32 => uint256)                      public fixs;
+  mapping (bytes32 => mapping (bytes32 => uint256)) public bags;
+#+END_SRC
+
+=End= uses the same multiowner auth model as the other =dss= contracts:
+
+#+NAME: auth
+#+BEGIN_SRC sol
+  mapping (address => uint) public wards;
+  function rely(address guy) public note auth { wards[guy] = 1; }
+  function deny(address guy) public note auth { wards[guy] = 0; }
+  modifier auth { require(wards[msg.sender] == 1); _; }
+#+END_SRC
+
+The constructor simply sets the creating account as owner and marks the system as =live=, i.e. uncaged:
+#+NAME: init
+#+BEGIN_SRC sol
+  constructor() public {
+      wards[msg.sender] = 1;
+      live = 1;
+  }
+#+END_SRC
+
+The target contracts of the =End= can be modified by owners in-flight:
+
+#+NAME: file
+#+BEGIN_SRC sol
+  function file(bytes32 what, address data) public auth {
+      if (what == "pit")  pit  = PitLike(data);
+      if (what == "cat")  cat  = CatLike(data);
+      if (what == "vow")  vow  = VowLike(data);
+      if (what == "drip") drip = DripLike(data);
+  }
+#+END_SRC
+
+#+NAME: act-file
+#+BEGIN_SRC act
+  behaviour file of End
+  interface file(bytes32 what, address data)
+
+  types
+
+      Pit_was  : address
+      Cat_was  : address
+      Vow_was  : address
+      Drip_was : address
+
+  storage
+
+      wards[CALLER_ID] |-> Can
+      Pit  |-> Pit_was  => #if what == #string2Word("pit")  #then data else Pit_was
+      Cat  |-> Cat_was  => #if what == #string2Word("cat")  #then data else Cat_was
+      Vow  |-> Vow_was  => #if what == #string2Word("vow")  #then data else Vow_was
+      Drip |-> Drip_was => #if what == #string2Word("drip") #then data else Drip_was
+
+  iff
+
+      Can == 1
+#+END_SRC
+
+* The global settlement process
+First, the top-level =cage= method is called, which sets the =live= flag to zero and initiates =cage= in the other relevant system modules:
+
+#+NAME: cage
+#+BEGIN_SRC sol
+  function cage(uint256 dump) public auth {
+      // require(live == 1); ???
+      pit.cage();
+      cat.cage();
+      vow.cage(dump);
+      drip.cage();
+      live = 0;
+  }
+#+END_SRC
+
+#+NAME: act-cage
+#+BEGIN_SRC act
+  behaviour cage of End
+  interface cage(uint256 dump)
+
+  types
+
+      Can      : uint256
+      Pit      : address
+      Cat      : address
+      Vow      : address
+      Drip     : address
+      Can_pit  : uint256
+      Can_cat  : uint256
+      Can_vow  : uint256
+      Can_drop : uint256
+      Live     : uint256
+
+  storage
+
+      wards[CALLER_ID] |-> Can
+      pit  |-> Pit
+      cat  |-> Cat
+      vow  |-> Vow
+      drip |-> Drip
+      live |-> Live => 0
+
+  storage Pit
+
+      wards[ACCT_ID] |-> Can_pit
+      live           |-> Pit_live => 0
+
+  storage Cat
+
+      wards[ACCT_ID] |-> Can_cat
+      live |-> Cat_live => 0
+
+  storage Vow
+
+      wards[ACCT_ID] |-> Can_vow
+      live |-> Vow_live => 0
+      // TODO: burn hump * dump
+
+  storage Drip
+
+      wards[ACCT_ID] |-> Can_drip
+      live |-> Drip_live => 0
+
+  iff
+
+      //??Live == 1
+      Can      == 1
+      Can_pit  == 1
+      Can_cat  == 1
+      Can_vow  == 1
+      Can_drip == 1
+#+END_SRC
+
+The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =wad= if all of it.
+
+Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fix=, once for each collateral type. We will also write \( {\tt pump} := \frac{{\tt debt} - {\tt vice}}{{\tt debt} - {\tt vice} - {\tt hump}\cdot{\tt dump}} \) for the /=hump= burn multiplier/.
+
+#+NAME: cage-ilk
+#+BEGIN_SRC sol
+  function cage(bytes32 ilk, uint256 tag, uint256 fix) public auth {
+      require(live == 0);
+      tags[ilk] = tag;
+      fixs[ilk] = fix;
+  }
+#+END_SRC
+
+#+NAME: act-cage-ilk
+#+BEGIN_SRC act
+  behaviour cage-ilk of End
+  interface cate(bytes32 ilk, uint256 tag, uint256 fix)
+
+  types
+
+      Can  : uint256
+      Live : uint256
+
+  storage
+
+      wards[CALLER_ID] |-> Can
+      live             |-> Live
+      tags[ilk]        |-> _ => tag
+      fixs[ilk]        |-> _ => fix
+
+  iff
+
+      Can  == 1
+      Live == 0
+#+END_SRC
+
+** Interlude: the =fix= computation
+
+The =fix= represents the quantity of =gem= that a user will be able to redeem for one dai. We now describe the procedure by which it should be computed, presumably by an off-chain agent. In the following calculation, for notational simplicity, the appropriate operations for fixed point units are implicit, e.g. \( {\tt hump} \cdot {\tt dump} \) is the number of dai from the =hump= that will be burned, \( {\tt art_{iu}} \cdot {\tt rate_i} \) is the outstanding dai debt of CDP =u=, etc.
+
+*** TODO If the ongoing collateral auctions finish in deficit
+
+*** If the ongoing collateral auctions finish in adequacy
+
+We assume that all of the collateral pending liquidation in the =Vow= will raise enough dai to cover the outstanding =vice=. In the current design, this is impossible to predict in advance, since the auctions will continue running well past the time that global settlement is initiated. Thus, this is a risk that we have to tolerate.
+
+In this case, the total quantity of dai that must be redeemable through =End= is the total dai supply, minus the amount of dai that will be consumed through `flip` and `flop` auctions, minus the amount from the =hump= that was burned during =Vow.cage(dump)=, i.e.:
+
+\[
+{\tt debt} - {\tt vice} - {\tt hump \cdot dump}
+\]
+
+The first priority is to ensure that there is no race condition. That is to say, that with the \( {\tt fix_i}\) and \({\tt tag_i} \) that we chosen, every dai holder will be able to redeem the same quantity of =gem=, regardless of when they interact with the =End=, i.e.:
+
+\[
+\sum_u {\tt war_{iu}} = {\tt fix_i} \cdot ({\tt debt} - {\tt vice} - {\tt hump \cdot dump })
+\]
+
+We shall call this the /no-race property/. Setting \( {\tt war_{iu}} \) to be \( \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i }) \), where \( {\tt tag_i} \) is some /CDP settlement rate/, to be determined, we can solve for \( {\tt fix_i } \):
+
+\[
+{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+\]
+
+Another desirable feature is for all =gem= redeemable for one dai to be worth one dollar:
+
+\[
+\sum_i {\tt fix_i} \cdot p_{{\tt i}} = 1
+\]
+
+We call this the /parity property/.
+
+**** In the absence of undercollateralised positions
+
+Consider the case where no CDPs are undercollateralised, i.e. that for all =u=, \( {\tt art_{iu}} \cdot {\tt rate_i} \geq {\tt ink_{iu}} \cdot p_{{\tt i}} \). Then we can satisfy both constraints simply by setting \( {\tt tag_i} = \frac{1}{p_{{\tt i}}} \):
+
+\[
+{\tt fix_i} = \frac{{\tt rate_i} \cdot {\tt tag_i } \cdot {\tt Art_i}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = \frac{{\tt rate_i} \cdot {\tt Art_i}}{p_{{\tt i}}\cdot({\tt debt} - {\tt vice} - {\tt hump \cdot dump })}
+\]
+
+\[
+\sum_i {\tt fix_i} \cdot p_{{\tt i}} = \frac{\sum_i {\tt rate_i} \cdot {\tt Art_i}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = \frac{{\tt debt} - {\tt vice}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = {\tt pump}
+\]
+
+from which it is clear that we could use \( {\tt dump } = 0 \) and satisfy both the no-race and parity properties.
+
+**** In the presence of undercollateralised positions
+Now if some CDPs had been undercollateralised, we would have had instead:
+
+\[
+{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, \frac{{\tt art_{iu}} \cdot {\tt rate_i}}{p_{{\tt i}}})}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+\]
+
+and the value redeemable from one dai would be:
+
+\begin{align*}
+\sum_i {\tt fix_i} \cdot p_{{\tt i}} & = \sum_i \frac{p_{{\tt i}} \cdot \sum_u \mathrm{min}({\tt ink_{iu}}, \frac{{\tt art_{iu}} \cdot {\tt rate_i}}{p_{{\tt i}}})}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} \\
+                                     & = \sum_i \frac{\sum_{u :{\tt over}} {\tt art_{iu}} \cdot {\tt rate_i} + \sum_{u :{\tt under}}p_{{\tt i}} \cdot {\tt ink_{iu}}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} \\
+                                     & = \frac{\sum_i {\tt Art_i} \cdot {\tt rate_i} - {\tt gap_i} }{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} \\
+                                     & = \frac{{\tt debt} - {\tt Gap}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+\end{align*}
+
+where \( {\tt gap_i} := \sum_u \mathrm{max} (0, {\tt art_{iu}} \cdot {\tt rate_i} - p_{{\tt i}} \cdot {\tt ink_i}) \) and \( {\tt Gap} := \sum_i {\tt gap_i} \), are the per =Ilk= and global gross negative CDP equity, respectively. Thus, though we have ensured the no-race property, we have not necessarily ensured parity. However, if =hump= is large enough relative to =Gap=, it may be possible to ensure that the above expression equals one, solely by increasing =dump=.
+
+Now if instead we wanted to set \( {\tt tag_i } \) and \( {\tt fix_i } \) so as to guarantee parity as well, we could start by postulating that for all \( {\tt i} \):
+
+\[
+{\tt fix_i} \cdot p_{{\tt i}} = \frac{{\tt Art_i} \cdot {\tt rate_i}}{{\tt debt} - {\tt vice}}
+\]
+
+which will ensure that \( \sum_i {\tt fix_i} \cdot p_{{\tt i}} = 1 \) due to the fundamental equation of dai.
+
+It remains to choose the \( {\tt tag_i} \) such that losses from undercollateralised CDPs of =Ilk= =i= are socialised across all CDPs of the =Ilk=.
+
+\begin{align*}
+{\tt fix_i} & = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} \\
+            & = \frac{\sum_{u : {\tt over}} {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i } + \sum_{u :{\tt under}} {\tt ink_{iu}}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+\end{align*}
+
+which after reärranging gives:
+
+\begin{align*}
+{\tt tag_i} & = \frac{{\tt fix_i} \cdot ({\tt debt} - {\tt vice} - {\tt hump \cdot dump }) - \sum_{u :{\tt under}} {\tt ink_{iu}} }{\sum_{u : {\tt over}} {\tt art_{iu}} \cdot {\tt rate_i}} \\
+            & = \frac{{\tt Art_i} \cdot {\tt rate_i} \cdot {\tt pump}^{-1} - \sum_{u :{\tt under}} {p_{{\tt i}} \cdot \tt ink_{iu}} }{p_{{\tt i}} \cdot \sum_{u : {\tt over}} {\tt art_{iu}} \cdot {\tt rate_i}} \\
+            & =\frac{{\tt Art_i} \cdot {\tt rate_i}  \cdot {\tt pump}^{-1} - \sum_{u :{\tt under}} {p_{{\tt i}} \cdot \tt ink_{iu}}}{p_{{\tt i}} \cdot \sum_{u : {\tt over}} {\tt art_{iu}} \cdot {\tt rate_i}} \\
+            & =\frac{{\tt Art_i} \cdot {\tt rate_i}  \cdot {\tt pump}^{-1} - \sum_{u :{\tt under}} {p_{{\tt i}} \cdot \tt ink_{iu}}}{p_{{\tt i}} \cdot ({\tt Art_i} \cdot {\tt rate_i} - {\tt gap_i})}
+\end{align*}
+
+which is only valid when \( {\tt Art_i} \cdot {\tt rate_i} \geq {\tt gap_i} \), i.e. when the Ilk =i= is on aggregate not undercollaterallised. Note also that when there are no undercollateralised CDPs in the =Ilk= =i= and with \( {\tt dump = 0} \), the above reduces to \( {\tt tag_i} = \frac{1}{p_{{\tt i}}} \), so this generalises our previous solution in that case. Note that there is again a choice of how much of the =hump= to burn, where if more of the =hump= is burned then a smaller loss is imposed on CDP holders.
+
+**** TODO In the presence of an undercollateralised =Ilk=
+
+A different calculation is necessary if there is an =Ilk= which is undercollateralised in aggregate, i.e. has \( {\tt Art_i} \cdot {\tt rate_i} \lt {\tt gap_i} \), and parity is desired. In that case, it is necessary to set the \( {\tt fix_i} \) in such a way as to socialise the losses from the undercollateralised =Ilk= across other collateral types. This calculation is TBA.
+
+** CDP Settlement
+Once =tag_i= has been provided, individual CDPs can be processed with =skim=, settling the position at the price implied by =tag_i=. This method is public, and both CDP holders and dai holders are incentivised to call it: the former in order to withdraw their remaining collateral, and the latter in order to make collateral available for redemption.
+#+NAME: skim
+#+BEGIN_SRC sol
+  function skim(bytes32 ilk, bytes32 urn) public {
+      require(tags[ilk] != 0);
+
+      (uint take, uint rate, uint Ink, uint Art) = vat.ilks(ilk); Art; Ink; take;
+      (uint ink, uint art) = vat.urns(ilk, urn);
+
+      // assumes take is ONE
+      uint war = min(ink, rmul(rmul(art, rate), tags[ilk]));
+
+      vat.grab(ilk, urn, bytes32(address(this)), bytes32(address(this)), -int(war), -int(art));
+  }
+#+END_SRC
+
+#+NAME: act-skim
+#+BEGIN_SRC act
+  behaviour skim of End
+  interface skim(bytes32 ilk, bytes32 urn)
+
+  types
+
+      Tag    : uint256
+      Vat    : address
+      Can    : uint256
+      Rate   : uint256
+      Ink_u  : uint256
+      Art_u  : uint256
+      Ink    : uint256
+      Art    : uint256
+      Gem    : uint256
+      Sin    : uint256
+      Vice   : uint256
+
+  storage
+
+      tags[ilk] |-> Tag
+      vat       |-> Vat
+
+  storage Vat
+
+      wards[ACCT_ID]     |-> Can
+      ilks[ilk].rate     |-> Rate
+      urns[ilk][urn].ink |-> Ink_u => Ink_u - #min(Ink_u, #rmul(#rmul(Art_u, Rate), Tag))
+      urns[ilk][urn].art |-> Art_u => 0
+      ilks[ilk].Ink      |-> Ink   => Ink - #min(Ink_u, #rmul(#rmul(Art_u, Rate), Tag))
+      ilks[ilk].Art      |-> Art   => Art - Art_u
+      gem[ilk][ACCT_ID]  |-> Gem   => Gem + #min(Ink_u, #rmul(#rmul(Art_u, Rate), Tag))
+      sin[ACCT_ID]       |-> Sin   => Sin - Rate * Art_u
+      vice               |-> Vice  => Vice - Rate * Art_u
+
+  iff in range uint256
+
+      Ink_u * #rmul(#rmul(Art_u, Rate), Tag)
+      #rmul(Art_u, Rate) * Tag
+      Art_u * Rate
+      Ink - #min(Ink_u, #rmul(#rmul(Art_u, Rate), Tag))
+      Art - Art_u
+      Gem + #min(Ink_u, #rmul(#rmul(Art_u, Rate), Tag))
+
+  iff
+
+      Can == 1
+#+END_SRC
+
+Since =frob= is now frozen, we also provide a method for CDP holder to remove their collateral from a settled =urn=, after =skim= has been called:
+
+#+NAME: shut
+#+BEGIN_SRC sol
+  function shut(bytes32 ilk) public {
+      (uint ink, uint art) = vat.urns(ilk, bytes32(msg.sender));
+      require(art == 0);
+      vat.tune(ilk, bytes32(msg.sender), -int(ink), 0);
+  }
+#+END_SRC
+
+#+NAME: act-shut
+#+BEGIN_SRC act
+  behaviour shut of End
+  interface shut(bytes32 ilk)
+
+  types
+
+      Vat : address
+      Ink : uint256
+      Art : uint256
+      Gem : uint256
+
+  storage
+
+      vat |-> Vat
+
+  storage Vat
+
+      wards[ACCT_ID]           |-> Can
+      urns[ilk][CALLER_ID].ink |-> Ink => 0
+      urns[ilk][CALLER_ID].art |-> Art
+      gem[ilk][CALLER_ID]      |-> Gem => Gem + Ink
+
+  iff in range uint256
+
+      Gem + Ink
+
+  iff
+
+      Can == 1
+      Art == 0
+#+END_SRC
+** Redemption
+
+A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way process. At this point, the =sin= incurred by the =End= during =skim= is cancelled.
+
+#+NAME: shop
+#+BEGIN_SRC sol
+  function shop() public {
+      uint rad = vat.dai(msg.sender);
+      vat.heal(this, msg.sender, rad);
+      dai[msg.sender] = add(dai[msg.sender], rad);
+  }
+#+END_SRC
+
+#+NAME: act-shop
+#+BEGIN_SRC act
+  behaviour shop of End
+  interface shop()
+
+  types
+
+      Vat : address
+      Rad : uint256
+      Sin : uint256
+
+  storage
+
+      vat            |-> Vat
+      dai[CALLER_ID] |-> Dai => Dai + Rad
+
+  storage Vat
+
+      wards[ACCT_ID] |-> Can
+      dai[CALLER_ID] |-> Rad  => 0
+      sin[ACCT_ID]   |-> Sin  => Sin - Rad
+      vice           |-> Vice => Vice - Rad
+      debt           |-> Debt => Debt - Rad
+
+  iff in range uint256
+
+      Dai + Rad
+      Sin - Rad
+
+  iff
+
+      Can == 1
+#+END_SRC
+
+For every =Ilk= that they wish to claim, the dai holder calls =pack=, receiving =bag= tokens (/backed asset guarantee tokens/) in the same quantity as the dai they are redeeming:
+
+#+NAME: pack
+#+BEGIN_SRC sol
+  function pack(bytes32 ilk) public {
+      require(bags[ilk][msg.sender] == 0);
+      bags[ilk][msg.sender] = add(bags[ilk][msg.sender], dai[msg.sender]);
+  }
+#+END_SRC
+
+#+NAME: act-pack
+#+BEGIN_SRC act
+  behaviour pack of End
+  interface pack(bytes32 ilk)
+
+  types
+
+      Dai : uint256
+      Nul : uint256
+
+  storage
+
+      Dai[msg.sender]       |-> Dai
+      bags[ilk][msg.sender] |-> Nul => Nul + Dai
+
+  iff
+
+      Nul == 0
+#+END_SRC
+
+Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for one dai, by calling =cash=.
+
+#+NAME: cash
+#+BEGIN_SRC sol
+  function cash(bytes32 ilk) public {
+      vat.flux(ilk, this, msg.sender, rmul(bags[ilk][msg.sender], fixs[ilk]));
+      bags[ilk][msg.sender]  = 0;
+      dai[msg.sender]        = 0;
+  }
+#+END_SRC
+
+#+NAME: act-cash
+#+BEGIN_SRC act
+  behaviour cash of End
+  interface cash(bytes32 ilk)
+
+  types
+
+      Bag : uint256
+      Dai : uint256
+
+  storage
+
+      vat                  |-> Vat
+      bags[ilk][CALLER_ID] |-> Bag => 0
+      dai[CALLER_ID]       |-> Dai => 0
+
+  storage Vat
+
+      wards[ACCT_ID]      |-> Can
+      gem[ilk][ACCT_ID]   |-> Gem_end => Gem_end - #rmul(Bag, Fix)
+      gem[ilk][CALLER_ID] |-> Gem_lad => Gem_lad + #rmul(Bag, Fix)
+
+  iff in range uint256
+
+      Gem_end - #rmul(Bag, Fix)
+      Gem_lad + #rmul(Bag, Fix)
+
+  iff
+
+      Can == 1
+#+END_SRC
+
+* TODO NFT Settlement Modules

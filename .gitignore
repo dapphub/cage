@@ -1,0 +1,5 @@
+src/*
+act/*
+doc/*
+ltximg/
+!doc/*.css

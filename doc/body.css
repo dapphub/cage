@@ -1,0 +1,8 @@
+body
+{
+    font-size: larger;
+    line-height: 1.4;
+    text-align: justify;text-justify: inter-word;
+    margin: 80px auto;
+    max-width: 1100px;
+}
