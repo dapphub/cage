@@ -338,7 +338,7 @@ The =fix= represents the quantity of =gem= that a user will be able to redeem fo
 
 We assume that all of the collateral pending liquidation in the =Vow= will raise enough dai to cover the outstanding =vice=. In the current design, this is impossible to predict in advance, since the auctions will continue running well past the time that global settlement is initiated. Thus, this is a risk that we have to tolerate.
 
-In this case, the total quantity of dai that must be redeemable through =End= is the total dai supply, minus the amount of dai that will be consumed through `flip` and `flop` auctions, minus the amount from the =hump= that was burned during =Vow.cage(dump)=, i.e.:
+In this case, the total quantity of dai that must be redeemable through =End= is the total dai supply, minus the amount of dai that will be consumed through =flip= and =flop= auctions, minus the amount from the =hump= that was burned during =Vow.cage(dump)=, i.e.:
 
 \[
 {\tt debt} - {\tt vice} - {\tt hump \cdot dump}
