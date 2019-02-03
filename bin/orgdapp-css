@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+emacs --quick --no-window-system --load="${0%/*}/make.el" --eval="(make-css \"$1\" \"doc/theme.css\")"

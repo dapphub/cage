@@ -17,7 +17,7 @@ let act_mode = stdenv.mkDerivation {
 };
 in
   stdenv.mkDerivation {
-  name = "cage-build";
+  name = "orgdapp";
   buildInputs =
   let emacs = emacsWithPackages (epkgs: (with epkgs.melpaStablePackages; [
       act_mode
@@ -31,4 +31,5 @@ in
     export NIX_PATH="nixpkgs=${toString <nixpkgs>}"
     export LD_LIBRARY_PATH="${libvirt}/lib:$LD_LIBRARY_PATH"
   '';
+  installPhase = "mkdir $out/bin && install bin/* $out/bin";
 }

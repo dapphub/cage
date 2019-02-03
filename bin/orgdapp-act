@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+echo -e "$1\nact" | emacs --quick --batch --load="${0%/*}/make.el" --funcall=tangle

@@ -141,15 +141,15 @@
       }
       .org-diff-refine-added {
         /* diff-refine-added */
-        background-color: #c2e09a;
+        background-color: #bfdb96;
       }
       .org-diff-refine-changed {
         /* diff-refine-changed */
-        background-color: #a6c4f1;
+        background-color: #96bff3;
       }
       .org-diff-refine-removed {
         /* diff-refine-removed */
-        background-color: #f4a9a8;
+        background-color: #f3b396;
       }
       .org-diff-removed {
         /* diff-removed */
@@ -265,7 +265,7 @@
       }
       .org-glyphless-char {
         /* glyphless-char */
-        font-size: 60%;
+        text-decoration: underline;
       }
       .org-gnus-group-mail-1 {
         /* gnus-group-mail-1 */
@@ -1145,7 +1145,6 @@
       .org-tool-bar {
         /* tool-bar */
         color: #000000;
-        background-color: #bfbfbf;
       }
       .org-tooltip {
         /* tooltip */
@@ -1238,7 +1237,8 @@
       }
       .org-widget-single-line-field {
         /* widget-single-line-field */
-        background-color: #d9d9d9;
+        color: #000000;
+        background-color: #00cd00;
       }
       .org-window-divider {
         /* window-divider */

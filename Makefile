@@ -3,10 +3,6 @@ ACT=act
 DOC=doc
 OUT=out
 
-PRELUDE=make.el
-
-EMACS=emacs --quick --batch --load=$(PRELUDE)
-
 CAGE=cage.org
 
 all: $(SRC)/cage.sol $(ACT)/cage.act $(DOC)/cage.html
@@ -20,16 +16,15 @@ clean:
 $(SRC)/ $(ACT)/ $(DOC)/:
 	mkdir -p $@
 
-$(SRC)/cage.sol: $(CAGE) $(PRELUDE) | $(SRC)/
-	nix-shell --command '$(EMACS) --eval="(org-babel-tangle-file \"$(CAGE)\" nil \"sol\")"'
+$(SRC)/cage.sol: $(CAGE) | $(SRC)/
+	nix-shell --command 'bin/orgdapp-sol $(CAGE)'
 
-$(ACT)/cage.act: $(CAGE) $(PRELUDE) | $(ACT)/
-	nix-shell --command '$(EMACS) --eval="(org-babel-tangle-file \"$(CAGE)\" nil \"act\")"'
+$(ACT)/cage.act: $(CAGE) | $(ACT)/
+	nix-shell --command 'bin/orgdapp-act $(CAGE)'
 
-$(DOC)/cage.html: $(CAGE) $(PRELUDE) | $(DOC)/
-	nix-shell --command '$(EMACS) --eval="(make-html \"$(CAGE)\" \"$@\")"'
+$(DOC)/cage.html: $(CAGE) | $(DOC)/
+	nix-shell --command 'bin/orgdapp-doc $(CAGE)'
 
 # don't build by default
-INTERACTIVE_EMACS=emacs --quick --load=$(PRELUDE)
-$(DOC)/theme.css: $(CAGE) $(PRELUDE) | $(DOC)/
-	nix-shell --command '$(INTERACTIVE_EMACS) --eval="(make-css \"$(CAGE)\" \"$@\")"'
+$(DOC)/theme.css: $(CAGE) | $(DOC)/
+	nix-shell --command 'bin/orgdapp-css $(CAGE)'
