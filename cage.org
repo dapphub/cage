@@ -34,10 +34,12 @@
       function dai(address lad) public returns (uint256);
       function ilks(bytes32 ilk) public returns (uint256, uint256, uint256, uint256);
       function urns(bytes32 ilk, bytes32 urn) public returns (uint256, uint256);
+      function move(bytes32 src, bytes32 dst, int256 rad) public;
       function flux(bytes32 ilk, bytes32 src, bytes32 dst, int256 rad) public;
       function tune(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
       function grab(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
       function heal(bytes32 u, bytes32 v, int256 rad) public;
+      function cage() public;
   }
   contract PitLike {
       function cage() public;
@@ -46,10 +48,10 @@
       function cage() public;
   }
   contract VowLike {
-      function cage(uint256 dump) public;
-  }
-  contract DripLike {
-      function cage() public;
+      function Joy() public returns (uint256);
+      function Woe() public returns (uint256);
+      function hump() public returns (uint256);
+      function heal(uint256 wad) public;
   }
 
   contract End {
@@ -61,6 +63,9 @@
 
       // --- Init ---
       <<init>>
+
+      // --- Helpers ---
+      <<helper>>
 
       // --- Math ---
       <<math>>
@@ -127,23 +132,38 @@
 
 
 * Setup
-We will require safe addition and =ray= fixed-point multiplication:
+We will require safe addition and multiplication, as well as =ray= fixed-point multiplication:
 #+NAME: math
 #+BEGIN_SRC sol
   function add(uint x, uint y) internal pure returns (uint z) {
       z = x + y;
       require(z >= x);
   }
-
+  function mul(uint x, uint y) internal pure returns (uint z) {
+        z = x * y;
+        require(y == 0 || z / y == x);
+    }
   uint constant ONE = 10 ** 27;
   function rmul(uint x, uint y) internal pure returns (uint z) {
       z = x * y;
       require(y == 0 || z / y == x);
       z = z / ONE;
   }
+  function u2i(uint x) internal pure returns (int y) {
+      y = int(x);
+      require(y >= 0);
+  }
 
   function min(uint x, uint y) internal pure returns (uint z) {
       if (x <= y) { z = x; } else { z = y; }
+  }
+#+END_SRC
+
+We define a function for casting an =address= to a =bytes32=:
+#+NAME: helper
+#+BEGIN_SRC sol
+  function a2b(address a) internal pure returns (bytes32 b) {
+      b = bytes32(bytes20(a));
   }
 #+END_SRC
 
@@ -154,7 +174,6 @@ The storage layout of the =End= is as follows:
   PitLike  public pit;
   CatLike  public cat;
   VowLike  public vow;
-  DripLike public drip;
   uint256  public live;
 
   mapping (address => uint256)                      public dai;
@@ -187,10 +206,10 @@ The target contracts of the =End= can be modified by owners in-flight:
 #+NAME: file
 #+BEGIN_SRC sol
   function file(bytes32 what, address data) public auth {
+      if (what == "vat")  vat  = VatLike(data);
       if (what == "pit")  pit  = PitLike(data);
       if (what == "cat")  cat  = CatLike(data);
       if (what == "vow")  vow  = VowLike(data);
-      if (what == "drip") drip = DripLike(data);
   }
 #+END_SRC
 
@@ -201,18 +220,18 @@ The target contracts of the =End= can be modified by owners in-flight:
 
   types
 
+      Vat_was  : address
       Pit_was  : address
       Cat_was  : address
       Vow_was  : address
-      Drip_was : address
 
   storage
 
       wards[CALLER_ID] |-> Can
-      Pit  |-> Pit_was  => #if what == #string2Word("pit")  #then data else Pit_was
-      Cat  |-> Cat_was  => #if what == #string2Word("cat")  #then data else Cat_was
-      Vow  |-> Vow_was  => #if what == #string2Word("vow")  #then data else Vow_was
-      Drip |-> Drip_was => #if what == #string2Word("drip") #then data else Drip_was
+      Vat  |-> Vat_was => #if what == #string2Word("vat")  #then data else Vat_was
+      Pit  |-> Pit_was => #if what == #string2Word("pit")  #then data else Pit_was
+      Cat  |-> Cat_was => #if what == #string2Word("cat")  #then data else Cat_was
+      Vow  |-> Vow_was => #if what == #string2Word("vow")  #then data else Vow_was
 
   iff
 
@@ -226,10 +245,11 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
 #+BEGIN_SRC sol
   function cage(uint256 dump) public auth {
       // require(live == 1); ???
+      vat.cage();
       pit.cage();
       cat.cage();
-      vow.cage(dump);
-      drip.cage();
+      vow.heal(min(vow.Joy(), vow.Woe()));
+      vat.move(a2b(address(vow)), a2b(address(this)), u2i(min(mul(vow.Joy(), ONE), mul(vow.hump(), dump))));
       live = 0;
   }
 #+END_SRC
@@ -242,15 +262,19 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
   types
 
       Can      : uint256
+      Vat      : address
       Pit      : address
       Cat      : address
       Vow      : address
-      Drip     : address
+      Can_vat  : uint256
       Can_pit  : uint256
       Can_cat  : uint256
       Can_vow  : uint256
-      Can_drop : uint256
       Live     : uint256
+      Vat_live : uint256
+      Pit_live : uint256
+      Cat_live : uint256
+      Vow_live : uint256
 
   storage
 
@@ -258,7 +282,6 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       pit  |-> Pit
       cat  |-> Cat
       vow  |-> Vow
-      drip |-> Drip
       live |-> Live => 0
 
   storage Pit
@@ -277,19 +300,19 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       live |-> Vow_live => 0
       // TODO: burn hump * dump
 
-  storage Drip
+  storage Vat
 
-      wards[ACCT_ID] |-> Can_drip
-      live |-> Drip_live => 0
+      wards[ACCT_ID] |-> Can_vat
+      live |-> Vat_live => 0
 
   iff
 
       //??Live == 1
       Can      == 1
+      Can_vat == 1
       Can_pit  == 1
       Can_cat  == 1
       Can_vow  == 1
-      Can_drip == 1
 #+END_SRC
 
 The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =wad= if all of it.
@@ -308,7 +331,7 @@ Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fi
 #+NAME: act-cage-ilk
 #+BEGIN_SRC act
   behaviour cage-ilk of End
-  interface cate(bytes32 ilk, uint256 tag, uint256 fix)
+  interface cage(bytes32 ilk, uint256 tag, uint256 fix)
 
   types
 
@@ -439,7 +462,7 @@ Once =tag_i= has been provided, individual CDPs can be processed with =skim=, se
       // assumes take is ONE
       uint war = min(ink, rmul(rmul(art, rate), tags[ilk]));
 
-      vat.grab(ilk, urn, bytes32(bytes20(address(this))), bytes32(bytes20(address(this))), -int(war), -int(art));
+      vat.grab(ilk, urn, a2b(address(this)), a2b(address(this)), -int(war), -int(art));
   }
 #+END_SRC
 
@@ -498,9 +521,9 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
 #+NAME: shut
 #+BEGIN_SRC sol
   function shut(bytes32 ilk) public {
-      (uint ink, uint art) = vat.urns(ilk, bytes32(bytes20(msg.sender)));
+      (uint ink, uint art) = vat.urns(ilk, a2b(msg.sender));
       require(art == 0);
-      vat.tune(ilk, bytes32(bytes20(msg.sender)), bytes32(bytes20(msg.sender)), bytes32(bytes20(msg.sender)), -int(ink), 0);
+      vat.tune(ilk, a2b(msg.sender), a2b(msg.sender), a2b(msg.sender), -int(ink), 0);
   }
 #+END_SRC
 
@@ -545,7 +568,7 @@ A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way proc
 #+BEGIN_SRC sol
   function shop() public {
       uint rad = vat.dai(msg.sender);
-      vat.heal(bytes32(bytes20(address(this))), bytes32(bytes20(msg.sender)), int(rad));
+      vat.heal(a2b(address(this)), a2b(msg.sender), int(rad));
       dai[msg.sender] = add(dai[msg.sender], rad);
   }
 #+END_SRC
@@ -589,8 +612,8 @@ For every =Ilk= that they wish to claim, the dai holder calls =pack=, receiving 
 #+NAME: pack
 #+BEGIN_SRC sol
   function pack(bytes32 ilk) public {
-      require(bags[ilk][bytes32(bytes20(msg.sender))] == 0);
-      bags[ilk][bytes32(bytes20(msg.sender))] = add(bags[ilk][bytes32(bytes20(msg.sender))], dai[msg.sender]);
+      require(bags[ilk][a2b(msg.sender)] == 0);
+      bags[ilk][a2b(msg.sender)] = add(bags[ilk][a2b(msg.sender)], dai[msg.sender]);
   }
 #+END_SRC
 
@@ -619,8 +642,8 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 #+NAME: cash
 #+BEGIN_SRC sol
   function cash(bytes32 ilk) public {
-      vat.flux(ilk, bytes32(bytes20(address(this))), bytes32(bytes20(msg.sender)), int(rmul(bags[ilk][bytes32(bytes20(msg.sender))], fixs[ilk])));
-      bags[ilk][bytes32(bytes20(msg.sender))]  = 0;
+      vat.flux(ilk, a2b(address(this)), a2b(msg.sender), int(rmul(bags[ilk][a2b(msg.sender)], fixs[ilk])));
+      bags[ilk][a2b(msg.sender)]  = 0;
       dai[msg.sender]        = 0;
   }
 #+END_SRC
@@ -657,11 +680,56 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
       Can == 1
 #+END_SRC
 
+Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account for it:
+
+#+BEGIN_SRC sol
+  function vent(uint256 rad) public {
+      vat.heal(a2b(address(this)), a2b(address(this)), u2i(rad));
+  }
+#+END_SRC
+
+#+BEGIN_SRC act
+  behaviour vent of End
+  interface vent(uint256 rad)
+
+  types
+
+      Vat  : address VatLike
+      Can  : uint256
+      Dai  : uint256
+      Sin  : uint256
+      Debt : uint256
+      Vice : uint256
+
+  storage
+
+      vat |-> Vat
+
+  storage Vat
+
+      Can[ACCT_ID] |-> Can
+      dai[ACCT_ID] |-> Dai  => Dai  - rad
+      sin[ACCT_ID] |-> Sin  => Sin  - rad
+      debt         |-> Debt => Debt - rad
+      vice         |-> Vice => Vice - rad
+
+  iff
+
+      Can == 1
+
+  iff in range uint256
+
+      Dai  - rad
+      Sin  - rad
+      Debt - rad
+      Vice - rad
+#+END_SRC
+
 * TODO NFT Settlement Modules
 
 * Tests
 
-#+NAME: solidity-skeleton
+#+NAME: solidity-test-skeleton
 #+BEGIN_SRC sol :tangle "src/cage.t.sol" :exports none
   // cage.t.sol -- global settlement tests
 
@@ -671,24 +739,69 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 
   import "ds-test/test.sol";
 
-  import {Vat} from 'dss/tune.sol';
+  import {Vat}  from 'dss/tune.sol';
+  import {Pit}  from 'dss/frob.sol';
+  import {Cat}  from 'dss/bite.sol';
+  import {Vow}  from 'dss/heal.sol';
 
-  import './cage.sol';
+  import {End}  from './cage.sol';
 
   contract EndTest is DSTest {
+      Vat   vat;
+      End   end;
+      Pit   pit;
+      Vow   vow;
+      Cat   cat;
 
-      End end;
+      <<test-setUp>>
 
-      function setUp() public {
-          end = new End();
-      }
+      <<test-cage-basic>>
+  }
+#+END_SRC
 
-      function testFail_basic_sanity() public {
-          assertTrue(false);
-      }
+We deploy the necessary components of the system for testing:
 
-      function test_basic_sanity() public {
-          assertTrue(true);
-      }
+#+NAME: test-setUp
+#+BEGIN_SRC sol
+  function setUp() public {
+      vat = new Vat();
+
+      pit = new Pit(address(vat));
+      vat.rely(address(pit));
+
+      vow = new Vow();
+      vow.file("vat", address(vat));
+      vat.rely(address(vow));
+
+      cat = new Cat(address(vat));
+      vat.rely(address(cat));
+      vow.rely(address(cat));
+
+      end = new End();
+      end.file("vat", address(vat));
+      end.file("pit", address(pit));
+      end.file("cat", address(cat));
+      end.file("vow", address(vow));
+      vat.rely(address(end));
+      pit.rely(address(end));
+      cat.rely(address(end));
+      vow.rely(address(end));
+  }
+#+END_SRC
+
+The first basic test ensures that =end.cage(hump)= is able to run and sets the liveness flags correctly:
+
+#+NAME: test-cage-basic
+#+BEGIN_SRC sol
+  function test_cage_basic() public {
+      assert(end.live() == 1);
+      assert(vat.live() == 1);
+      assert(pit.live() == 1);
+      assert(cat.live() == 1);
+      end.cage(0);
+      assert(end.live() == 0);
+      assert(vat.live() == 0);
+      assert(pit.live() == 0);
+      assert(cat.live() == 0);
   }
 #+END_SRC
