@@ -5,12 +5,17 @@ OUT=out
 
 CAGE=cage.org
 
+DAPP=dapp
+
 all: $(SRC)/cage.sol $(ACT)/cage.act $(DOC)/cage.html
 
 build: $(SRC)/cage.sol
-	dapp --use solc:0.4.24 build
+	$(DAPP) build
 
 doc: $(DOC)/cage.html
+
+test: build
+	$(DAPP) test
 
 clean:
 	rm -rf $(SRC) $(ACT) $(DOC)/cage.html $(OUT)
