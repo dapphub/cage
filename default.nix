@@ -20,6 +20,7 @@ with import <nixpkgs> {};
       htmlize
       projectile
       solarized-theme
+      solidity-mode
     ]));
   in
     stdenv.mkDerivation {

@@ -1,12 +1,15 @@
 (require 'package)
 (require 'org)
 (require 'act-mode)
+(require 'solidity-mode)
 
 ;; don't make backup~ files
 (setq make-backup-files nil)
 
 ;; use js-mode for solidity
-(define-derived-mode sol-mode js-mode "Solidity")
+;;(define-derived-mode sol-mode js-mode "Solidity")
+;; use solidity-mode for solidity
+(define-derived-mode sol-mode solidity-mode "Solidity")
 
 (defun tangle (source mode)
   (interactive "sFile to tangle: \nsMode to tangle: ")
