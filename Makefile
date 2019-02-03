@@ -11,7 +11,8 @@ CAGE=cage.org
 
 all: $(SRC)/cage.sol $(ACT)/cage.act $(DOC)/cage.html
 
-solidity: $(SRC)/cage.sol
+build: $(SRC)/cage.sol
+	dapp build
 
 clean:
 	rm -rf $(SRC) $(ACT) $(DOC)/cage.html $(OUT)
