@@ -1,0 +1,3 @@
+* cage: global settlement module
+
+Build the solidity source, =act= specs, and documentation with =make all=. Requires =nix= and =dapp=.

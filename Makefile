@@ -17,14 +17,14 @@ $(SRC)/ $(ACT)/ $(DOC)/:
 	mkdir -p $@
 
 $(SRC)/cage.sol: $(CAGE) | $(SRC)/
-	nix-shell --command 'bin/orgdapp-sol $(CAGE)'
+	nix-shell --pure --command 'orgdapp-sol $(CAGE)'
 
 $(ACT)/cage.act: $(CAGE) | $(ACT)/
-	nix-shell --command 'bin/orgdapp-act $(CAGE)'
+	nix-shell --pure --command 'orgdapp-act $(CAGE)'
 
 $(DOC)/cage.html: $(CAGE) | $(DOC)/
-	nix-shell --command 'bin/orgdapp-doc $(CAGE)'
+	nix-shell --pure --command 'orgdapp-doc $(CAGE)'
 
 # don't build by default
 $(DOC)/theme.css: $(CAGE) | $(DOC)/
-	nix-shell --command 'bin/orgdapp-css $(CAGE)'
+	nix-shell --pure --command 'orgdapp-css $(CAGE)'
