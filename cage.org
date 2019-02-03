@@ -5,7 +5,7 @@
 #+OPTIONS: author:t c:nil creator:comment d:(not "LOGBOOK") date:t
 #+OPTIONS: e:t email:nil f:t inline:t num:nil p:nil pri:nil stat:t
 #+OPTIONS: tags:t tasks:t tex:t timestamp:t toc:nil todo:t |:t
-#+OPTIONS: html-postamble:nil
+#+OPTIONS: html-postamble:nil tex:mathjax
 #+DESCRIPTION:
 #+EXCLUDE_TAGS: noexport
 #+KEYWORDS:
@@ -16,7 +16,7 @@
 #+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="./theme.css"/>
 #+HTML_HEAD_EXTRA: <script>window.MathJax || document.write('<script type="text/x-mathjax-config">MathJax.Hub.Config({"HTML-CSS":{imageFont:null}});<\/script><script src="/home/lev/src/MathJax/MathJax.js?config=TeX-AMS_HTML-full"><\/script>')</script>
 
-#+OPTIONS: tex:mathjax
+#+OPTIONS:
 # Local Variables:
 # org-confirm-babel-evaluate: nil
 # org-babel-exp-code-template: "#+BEGIN_SRC %lang%switches%flags\n%body\n#+END_SRC"
@@ -28,12 +28,12 @@
 
   // <<license>>
 
-  pragma solidity ^0.5.2;
+  pragma solidity ^0.4.24;
 
   contract VatLike {
-      function dai(address lad) public;
-      function ilks(bytes32 ilk) public;
-      function urns(bytes32 ilk, bytes32 urn) public;
+      function dai(address lad) public returns (uint256);
+      function ilks(bytes32 ilk) public returns (uint256, uint256, uint256, uint256);
+      function urns(bytes32 ilk, bytes32 urn) public returns (uint256, uint256);
       function flux(bytes32 ilk, bytes32 src, bytes32 dst, int256 rad) public;
       function tune(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
       function grab(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
@@ -500,7 +500,7 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
   function shut(bytes32 ilk) public {
       (uint ink, uint art) = vat.urns(ilk, bytes32(msg.sender));
       require(art == 0);
-      vat.tune(ilk, bytes32(msg.sender), bytes32(msg.sender), -int(ink), 0);
+      vat.tune(ilk, bytes32(msg.sender), bytes32(msg.sender), bytes32(msg.sender), -int(ink), 0);
   }
 #+END_SRC
 
@@ -544,7 +544,7 @@ A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way proc
 #+BEGIN_SRC sol
   function shop() public {
       uint rad = vat.dai(msg.sender);
-      vat.heal(this, msg.sender, rad);
+      vat.heal(bytes32(address(this)), bytes32(msg.sender), int(rad));
       dai[msg.sender] = add(dai[msg.sender], rad);
   }
 #+END_SRC
@@ -588,8 +588,8 @@ For every =Ilk= that they wish to claim, the dai holder calls =pack=, receiving 
 #+NAME: pack
 #+BEGIN_SRC sol
   function pack(bytes32 ilk) public {
-      require(bags[ilk][msg.sender] == 0);
-      bags[ilk][msg.sender] = add(bags[ilk][msg.sender], dai[msg.sender]);
+      require(bags[ilk][bytes32(msg.sender)] == 0);
+      bags[ilk][bytes32(msg.sender)] = add(bags[ilk][bytes32(msg.sender)], dai[msg.sender]);
   }
 #+END_SRC
 
@@ -618,8 +618,8 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 #+NAME: cash
 #+BEGIN_SRC sol
   function cash(bytes32 ilk) public {
-      vat.flux(ilk, this, msg.sender, rmul(bags[ilk][msg.sender], fixs[ilk]));
-      bags[ilk][msg.sender]  = 0;
+      vat.flux(ilk, bytes32(address(this)), bytes32(msg.sender), int(rmul(bags[ilk][bytes32(msg.sender)], fixs[ilk])));
+      bags[ilk][bytes32(msg.sender)]  = 0;
       dai[msg.sender]        = 0;
   }
 #+END_SRC
@@ -657,3 +657,35 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 #+END_SRC
 
 * TODO NFT Settlement Modules
+
+* Tests
+
+#+NAME: solidity-skeleton
+#+BEGIN_SRC sol :tangle "src/cage.t.sol" :exports none
+  // cage.t.sol -- global settlement tests
+
+  // <<license>>
+
+  pragma solidity ^0.4.24;
+
+  import "ds-test/test.sol";
+
+  import {Vat} from 'dss/tune.sol';
+
+  import './cage.sol';
+
+  contract EndTest is DSTest {
+
+      function setUp() public {
+          end = new End();
+      }
+
+      function testFail_basic_sanity() public {
+          assertTrue(false);
+      }
+
+      function test_basic_sanity() public {
+          assertTrue(true);
+      }
+  }
+#+END_SRC
