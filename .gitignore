@@ -1,5 +1,6 @@
-src/*
-act/*
-doc/*
-ltximg/
+/src
+/act
+/doc
+/ltximg
 !doc/*.css
+/out
