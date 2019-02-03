@@ -1,5 +1,6 @@
 (require 'package)
 (require 'org)
+(require 'act-mode)
 
 ;; don't make backup~ files
 (setq make-backup-files nil)
