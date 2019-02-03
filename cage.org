@@ -28,13 +28,16 @@
 
   // <<license>>
 
-  pragma sol ^0.4.24;
+  pragma solidity ^0.5.2;
 
   contract VatLike {
       function dai(address lad) public;
+      function ilks(bytes32 ilk) public;
+      function urns(bytes32 ilk, bytes32 urn) public;
       function flux(bytes32 ilk, bytes32 src, bytes32 dst, int256 rad) public;
       function tune(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
       function grab(bytes32 i, bytes32 u, bytes32 v, bytes32 w, int256 dink, int256 dart) public;
+      function heal(bytes32 u, bytes32 v, int256 rad) public;
   }
   contract PitLike {
       function cage() public;
@@ -138,6 +141,10 @@ We will require safe addition and =ray= fixed-point multiplication:
       require(y == 0 || z / y == x);
       z = z / ONE;
   }
+
+  function min(uint x, uint y) internal pure returns (uint z) {
+      if (x <= y) { z = x; } else { z = y; }
+  }
 #+END_SRC
 
 The storage layout of the =End= is as follows:
@@ -161,8 +168,8 @@ The storage layout of the =End= is as follows:
 #+NAME: auth
 #+BEGIN_SRC sol
   mapping (address => uint) public wards;
-  function rely(address guy) public note auth { wards[guy] = 1; }
-  function deny(address guy) public note auth { wards[guy] = 0; }
+  function rely(address guy) public auth { wards[guy] = 1; }
+  function deny(address guy) public auth { wards[guy] = 0; }
   modifier auth { require(wards[msg.sender] == 1); _; }
 #+END_SRC
 
@@ -493,7 +500,7 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
   function shut(bytes32 ilk) public {
       (uint ink, uint art) = vat.urns(ilk, bytes32(msg.sender));
       require(art == 0);
-      vat.tune(ilk, bytes32(msg.sender), -int(ink), 0);
+      vat.tune(ilk, bytes32(msg.sender), bytes32(msg.sender), -int(ink), 0);
   }
 #+END_SRC
 
