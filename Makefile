@@ -8,7 +8,9 @@ CAGE=cage.org
 all: $(SRC)/cage.sol $(ACT)/cage.act $(DOC)/cage.html
 
 build: $(SRC)/cage.sol
-	dapp build
+	dapp --use solc:0.4.24 build
+
+doc: $(DOC)/cage.html
 
 clean:
 	rm -rf $(SRC) $(ACT) $(DOC)/cage.html $(OUT)
