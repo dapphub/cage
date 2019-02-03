@@ -28,7 +28,7 @@
 
   // <<license>>
 
-  pragma solidity ^0.4.24;
+  pragma solidity >=0.5.0;
 
   contract VatLike {
       function dai(address lad) public returns (uint256);
@@ -439,7 +439,7 @@ Once =tag_i= has been provided, individual CDPs can be processed with =skim=, se
       // assumes take is ONE
       uint war = min(ink, rmul(rmul(art, rate), tags[ilk]));
 
-      vat.grab(ilk, urn, bytes32(address(this)), bytes32(address(this)), -int(war), -int(art));
+      vat.grab(ilk, urn, bytes32(bytes20(address(this))), bytes32(bytes20(address(this))), -int(war), -int(art));
   }
 #+END_SRC
 
@@ -498,9 +498,9 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
 #+NAME: shut
 #+BEGIN_SRC sol
   function shut(bytes32 ilk) public {
-      (uint ink, uint art) = vat.urns(ilk, bytes32(msg.sender));
+      (uint ink, uint art) = vat.urns(ilk, bytes32(bytes20(msg.sender)));
       require(art == 0);
-      vat.tune(ilk, bytes32(msg.sender), bytes32(msg.sender), bytes32(msg.sender), -int(ink), 0);
+      vat.tune(ilk, bytes32(bytes20(msg.sender)), bytes32(bytes20(msg.sender)), bytes32(bytes20(msg.sender)), -int(ink), 0);
   }
 #+END_SRC
 
@@ -536,6 +536,7 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
       Can == 1
       Art == 0
 #+END_SRC
+
 ** Redemption
 
 A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way process. At this point, the =sin= incurred by the =End= during =skim= is cancelled.
@@ -544,7 +545,7 @@ A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way proc
 #+BEGIN_SRC sol
   function shop() public {
       uint rad = vat.dai(msg.sender);
-      vat.heal(bytes32(address(this)), bytes32(msg.sender), int(rad));
+      vat.heal(bytes32(bytes20(address(this))), bytes32(bytes20(msg.sender)), int(rad));
       dai[msg.sender] = add(dai[msg.sender], rad);
   }
 #+END_SRC
@@ -588,8 +589,8 @@ For every =Ilk= that they wish to claim, the dai holder calls =pack=, receiving 
 #+NAME: pack
 #+BEGIN_SRC sol
   function pack(bytes32 ilk) public {
-      require(bags[ilk][bytes32(msg.sender)] == 0);
-      bags[ilk][bytes32(msg.sender)] = add(bags[ilk][bytes32(msg.sender)], dai[msg.sender]);
+      require(bags[ilk][bytes32(bytes20(msg.sender))] == 0);
+      bags[ilk][bytes32(bytes20(msg.sender))] = add(bags[ilk][bytes32(bytes20(msg.sender))], dai[msg.sender]);
   }
 #+END_SRC
 
@@ -605,8 +606,8 @@ For every =Ilk= that they wish to claim, the dai holder calls =pack=, receiving 
 
   storage
 
-      Dai[msg.sender]       |-> Dai
-      bags[ilk][msg.sender] |-> Nul => Nul + Dai
+      dai[msg.sender]      |-> Dai
+      bags[ilk][CALLER_ID] |-> Nul => Nul + Dai
 
   iff
 
@@ -618,8 +619,8 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 #+NAME: cash
 #+BEGIN_SRC sol
   function cash(bytes32 ilk) public {
-      vat.flux(ilk, bytes32(address(this)), bytes32(msg.sender), int(rmul(bags[ilk][bytes32(msg.sender)], fixs[ilk])));
-      bags[ilk][bytes32(msg.sender)]  = 0;
+      vat.flux(ilk, bytes32(bytes20(address(this))), bytes32(bytes20(msg.sender)), int(rmul(bags[ilk][bytes32(bytes20(msg.sender))], fixs[ilk])));
+      bags[ilk][bytes32(bytes20(msg.sender))]  = 0;
       dai[msg.sender]        = 0;
   }
 #+END_SRC
@@ -666,7 +667,7 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 
   // <<license>>
 
-  pragma solidity ^0.4.24;
+  pragma solidity >=0.5.0;
 
   import "ds-test/test.sol";
 
@@ -675,6 +676,8 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
   import './cage.sol';
 
   contract EndTest is DSTest {
+
+      End end;
 
       function setUp() public {
           end = new End();
