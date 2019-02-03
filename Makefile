@@ -1,6 +1,7 @@
 SRC=src
 ACT=act
 DOC=doc
+OUT=out
 
 PRELUDE=make.el
 
@@ -13,7 +14,7 @@ all: $(SRC)/cage.sol $(ACT)/cage.act $(DOC)/cage.html
 solidity: $(SRC)/cage.sol
 
 clean:
-	rm -rf $(SRC) $(ACT) $(DOC)/cage.html
+	rm -rf $(SRC) $(ACT) $(DOC)/cage.html $(OUT)
 
 $(SRC)/ $(ACT)/ $(DOC)/:
 	mkdir -p $@
