@@ -814,9 +814,9 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
 
       <<test-cage-undercollateralised-cdp-parity>>
 
-      // <<test-cage-undercollateralised-dai-parity-toll>>
+      // <<test-cage-undercollateralised-dai-parity-collateral>>
 
-      // <<test-cage-undercollateralised-dai-parity-fold>>
+      <<test-cage-undercollateralised-dai-parity-debt>>
   }
 #+END_SRC
 
@@ -1082,18 +1082,58 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
 
 ** TODO Testing the case with dai parity
 
+We now test the case when there are two CDPs, one of which is undercollateralised, but such that the =Ilk= as a whole is well collateralised.
+
 *** TODO socialising proportionally to collateral
 
-We now test the case when there are two CDPs, one of which is undercollateralised, but such that the =Ilk= as a whole is well collateralised. Suppose that the price of ="gold"= falls as low as 2 dai, applying our formulas for \( {\tt tag } \) and \( {\tt fix } \) gives:
-
-\begin{gather*}
-{\tt tag } = \frac{8}{17} \\
-{\tt fix } = \frac{1}{2}
-\end{gather*}
-
-#+NAME: test-cage-undercollateralised-dai-parity-toll
+#+NAME: test-cage-undercollateralised-dai-parity-collateral
 #+BEGIN_SRC sol
-  function test_cage_undercollateralised() public {
+  function test_cage_undercollateralised_dai_parity_collateral() public {
+      // TODO
+  }
+#+END_SRC
+
+*** DONE socialising proportionally to debt
+
+Here's a simple way we can compute the (exact) numerical solution using a simple bisection method:
+
+#+BEGIN_SRC python :results output
+  WAD = 10**18
+  RAY = 10**27
+
+  def rmul(x, y):
+      return (x * y) // RAY
+
+  def solve_by_bisection(f, toe, hat, tol=1, tries=1000):
+      for _ in range(tries):
+          cut = (toe + hat) // 2
+          if f(cut) > tol:
+              hat = cut
+          elif f(cut) < -tol:
+              toe = cut
+          else:
+              return cut
+
+  Art  = 18 * WAD
+  rate = RAY
+  p    = 2
+
+  inks = [10 * WAD, 1 * WAD]
+  arts = [15 * WAD, 3 * WAD]
+
+  f = lambda tag: p * sum([min(ink, rmul(rmul(art, rate), tag)) for ink, art in zip(inks, arts)]) - rmul(Art, rate)
+
+  print(solve_by_bisection(f, 0, RAY))
+#+END_SRC
+
+#+RESULTS:
+: 533333333333333333358631380
+
+i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), lower than the true price of \( 2.0 \).
+
+#+NAME: test-cage-undercollateralised-dai-parity-debt
+#+BEGIN_SRC sol
+  function test_cage_undercollateralised_dai_parity_debt() public {
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
@@ -1112,31 +1152,33 @@ We now test the case when there are two CDPs, one of which is undercollateralise
 
       // tag and fix computation
       uint hump = 0;
-      uint tag = (8 * ONE) / 17;
+      // CDP holders settled at price of 1.875
+      uint tag = 533333333333333333358631380;
+      // DAI holders get 1.0
       uint fix = ONE / 2;
       end.cage(hump);
       end.cage("gold", tag, fix);
       end.skim("gold", urn1);
       end.skim("gold", urn2);
 
-      // local checks:
+      // local checks
       assertEq(art("gold", urn1), 0);
-      assertEq(ink("gold", urn1), 1010101);
+      assertEq(ink("gold", urn1), 2 ether);
       assertEq(art("gold", urn2), 0);
       assertEq(ink("gold", urn2), 0);
       assertEq(vat.sin(bytes32(bytes20(address(end)))), rad(18 ether));
 
-      // global checks:
+      // global checks
       assertEq(vat.debt(), rad(18 ether));
       assertEq(vat.vice(), rad(18 ether));
 
       // CDP closing
       end.shut("gold");
       assertEq(ink("gold", urn1), 0);
-      assertEq(gem("gold", urn1), 202020);
-      assertEq(ink("gold", urn2), 0);
-      assertEq(gem("gold", urn2), 0);
+      assertEq(gem("gold", urn1), 2 ether);
+      gemA.exit(urn1, address(this), 2 ether);
 
+      // first dai redemption
       end.shop();
 
       // global checks:
@@ -1144,16 +1186,16 @@ We now test the case when there are two CDPs, one of which is undercollateralise
       assertEq(vat.vice(), rad(3 ether));
 
       end.pack("gold");
-      assertEq(gem("gold", bytes32(bytes20(address(end)))), 30303);
       end.cash("gold");
 
       // local checks:
       assertEq(vat.dai(urn1), 0);
-      assertEq(gem("gold", urn1), 60606 ether);
+      assertEq(gem("gold", urn1), rmul(fix, 15 ether));
+      gemA.exit(urn1, address(this), rmul(fix, 15 ether));
 
       // gather remaining dai into urn1
       daiM.move(urn2, urn1, 3 ether);
-
+      // second dai redemption
       end.shop();
 
       // global checks:
@@ -1161,11 +1203,15 @@ We now test the case when there are two CDPs, one of which is undercollateralise
       assertEq(vat.vice(), 0);
 
       end.pack("gold");
-      assertEq(gem("gold", bytes32(bytes20(address(end)))), 40404);
       end.cash("gold");
 
       // local checks:
       assertEq(vat.dai(urn1), 0);
-      assertEq(gem("gold", urn1), 50505 ether);
+      assertEq(gem("gold", urn1), rmul(fix, 3 ether));
+      gemA.exit(urn1, address(this), rmul(fix, 3 ether));
+
+      assertEq(gem("gold", bytes32(bytes20(address(end)))), 0);
+      // some dust remains in the adapter because of rounding:
+      assertTrue(gold.balanceOf(address(gemA)) < 2);
   }
 #+END_SRC
