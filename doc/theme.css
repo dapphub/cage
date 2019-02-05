@@ -28,6 +28,11 @@
         /* button */
         text-decoration: underline;
       }
+      .org-c-annotation {
+        /* c-annotation-face */
+        color: #268bd2;
+        font-weight: bold;
+      }
       .org-calendar-month-header {
         /* calendar-month-header */
         color: #268bd2;
