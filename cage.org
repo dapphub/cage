@@ -780,10 +780,10 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
   import "ds-test/test.sol";
   import "ds-token/token.sol";
 
-  import {Vat}  from 'dss/tune.sol';
-  import {Pit}  from 'dss/frob.sol';
-  import {Cat}  from 'dss/bite.sol';
-  import {Vow}  from 'dss/heal.sol';
+  import {Vat}  from 'dss/vat.sol';
+  import {Pit}  from 'dss/pit.sol';
+  import {Cat}  from 'dss/cat.sol';
+  import {Vow}  from 'dss/vow.sol';
   import {GemJoin} from 'dss/join.sol';
   import {GemMove, DaiMove} from 'dss/move.sol';
   import {End}  from './cage.sol';
@@ -936,7 +936,7 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
-      pit.frob("gold", urn1, 10 ether, 15 ether);
+      pit.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
 
       // global checks:
@@ -1001,13 +1001,13 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
-      pit.frob("gold", urn1, 10 ether, 15 ether);
+      pit.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
 
       // make a second CDP:
       urn2 = bytes32(uint256(bytes32(bytes20(address(this)))) + 1);
       gemA.join(urn2, 1 ether);
-      pit.frob("gold", urn2, 1 ether, 3 ether);
+      pit.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
       // this urn has 0 gem, 1 ink, 3 tab, 3 dai
 
       // global checks:
@@ -1137,13 +1137,13 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
-      pit.frob("gold", urn1, 10 ether, 15 ether);
+      pit.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
 
       // make a second CDP:
       urn2 = bytes32(uint256(bytes32(bytes20(address(this)))) + 1);
       gemA.join(urn2, 1 ether);
-      pit.frob("gold", urn2, 1 ether, 3 ether);
+      pit.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
       // this urn has 0 gem, 1 ink, 3 tab, 3 dai
 
       // global checks:
