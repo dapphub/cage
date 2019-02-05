@@ -3,4 +3,4 @@
 	url = https://github.com/dapphub/ds-test
 [submodule "lib/dss"]
 	path = lib/dss
-	url = git@git.sr.ht/~livnev/dss
+	url = https://git.sr.ht/~livnev/dss
