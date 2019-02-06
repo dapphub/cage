@@ -81,7 +81,7 @@
 
       <<skim>>
 
-      <<shut>>
+      <<free>>
 
       <<shop>>
 
@@ -105,7 +105,7 @@
 
    <<act-skim>>
 
-   <<act-shut>>
+   <<act-free>>
 
    <<act-shop>>
 
@@ -250,7 +250,7 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
 #+NAME: cage
 #+BEGIN_SRC sol
   function cage(uint256 dump) public auth {
-      // require(live == 1); ???
+      require(live == 1);
       vat.cage();
       pit.cage();
       cat.cage();
@@ -281,14 +281,22 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       Pit_live : uint256
       Cat_live : uint256
       Vow_live : uint256
+      Can_vat_vow : uint256
+      Ssin
+      Ash
+      Dai
+      Sin
+      Vice
+      Debt
+      Dai_end : uint256
 
   storage
 
       wards[CALLER_ID] |-> Can
-      pit  |-> Pit
-      cat  |-> Cat
-      vow  |-> Vow
-      live |-> Live => 0
+      pit              |-> Pit
+      cat              |-> Cat
+      vow              |-> Vow
+      live             |-> Live => 0
 
   storage Pit
 
@@ -298,27 +306,51 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
   storage Cat
 
       wards[ACCT_ID] |-> Can_cat
-      live |-> Cat_live => 0
+      live           |-> Cat_live => 0
 
   storage Vow
 
       wards[ACCT_ID] |-> Can_vow
-      live |-> Vow_live => 0
-      // TODO: burn hump * dump
+      live           |-> Vow_live => 0
+      Sin            |-> Ssin
+      Ash            |-> Ash
+      Hump           |-> Hump
 
   storage Vat
 
       wards[ACCT_ID] |-> Can_vat
-      live |-> Vat_live => 0
+      wards[Vow]     |-> Can_vat_vow
+      live           |-> Vat_live => 0
+      dai[Vow]       |-> Dai  => Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray - #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
+      sin[Vow]       |-> Sin  => Sin  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      vice           |-> Vice => Vice - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      debt           |-> Debt => Debt - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      dai[ACCT_ID]   |-> Dai_end => Dai_end + #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
+
+  iff in range uint256
+
+      Sin / #Ray - Ssin
+      (Sin / #Ray - Ssin) - Ash
+      #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      Sin  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      Vice - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      Debt - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      Hump * dump
+      Dai_end + #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
 
   iff
 
-      //??Live == 1
+      Live     == 1
       Can      == 1
-      Can_vat == 1
+      Can_vat  == 1
       Can_pit  == 1
       Can_cat  == 1
       Can_vow  == 1
+      Can_vat_vow == 1
 #+END_SRC
 
 The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =wad= if all of it.
@@ -555,20 +587,20 @@ Once =tag_i= has been provided, individual CDPs can be processed with =skim=, se
 
 Since =frob= is now frozen, we also provide a method for CDP holder to remove their collateral from a settled =urn=, after =skim= has been called:
 
-#+NAME: shut
+#+NAME: free
 #+BEGIN_SRC sol
-  function shut(bytes32 ilk) public {
+  function free(bytes32 ilk) public {
       // TODO: access to bytes
       (uint ink, uint art) = vat.urns(ilk, b32(msg.sender));
       require(art == 0);
-      vat.tune(ilk, b32(msg.sender), b32(msg.sender), b32(msg.sender), -int(ink), 0);
+      vat.grab(ilk, b32(msg.sender), b32(msg.sender), b32(msg.sender), -int(ink), 0);
   }
 #+END_SRC
 
-#+NAME: act-shut
+#+NAME: act-free
 #+BEGIN_SRC act
-  behaviour shut of End
-  interface shut(bytes32 ilk)
+  behaviour free of End
+  interface free(bytes32 ilk)
 
   types
 
@@ -961,7 +993,7 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       assertEq(vat.vice(), rad(15 ether));
 
       // CDP closing
-      end.shut("gold");
+      end.free("gold");
       assertEq(ink("gold", urn1), 0);
       assertEq(gem("gold", urn1), 7 ether);
       gemA.exit(urn1, address(this), 7 ether);
@@ -1037,7 +1069,7 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       assertEq(vat.vice(), rad(18 ether));
 
       // CDP closing
-      end.shut("gold");
+      end.free("gold");
       assertEq(ink("gold", urn1), 0);
       assertEq(gem("gold", urn1), 2.5 ether);
       gemA.exit(urn1, address(this), 2.5 ether);
@@ -1173,7 +1205,7 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       assertEq(vat.vice(), rad(18 ether));
 
       // CDP closing
-      end.shut("gold");
+      end.free("gold");
       assertEq(ink("gold", urn1), 0);
       assertEq(gem("gold", urn1), 2 ether);
       gemA.exit(urn1, address(this), 2 ether);
