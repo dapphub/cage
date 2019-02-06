@@ -281,14 +281,14 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       Pit_live : uint256
       Cat_live : uint256
       Vow_live : uint256
+      Ssin     : uint256
+      Ash      : uint256
+      Dai      : uint256
+      Sin      : uint256
+      Vice     : uint256
+      Debt     : uint256
+      Dai_end  : uint256
       Can_vat_vow : uint256
-      Ssin
-      Ash
-      Dai
-      Sin
-      Vice
-      Debt
-      Dai_end : uint256
 
   storage
 
