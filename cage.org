@@ -11,7 +11,7 @@
 #+KEYWORDS:
 #+LANGUAGE: en
 #+SELECT_TAGS: export
-#+PROPERTY: header-args :results output :exports both :noweb strip-export :tangle no
+#+PROPERTY: header-args :results output :exports both :noweb strip-export :tangle no :mkdirp yes
 #+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="./body.css"/>
 #+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="./theme.css"/>
 #+HTML_HEAD_EXTRA: <script>window.MathJax || document.write('<script type="text/x-mathjax-config">MathJax.Hub.Config({"HTML-CSS":{imageFont:null}});<\/script><script src="/home/lev/src/MathJax/MathJax.js?config=TeX-AMS_HTML-full"><\/script>')</script>
