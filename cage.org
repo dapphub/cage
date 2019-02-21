@@ -56,13 +56,23 @@
       function cage() public;
   }
   contract CatLike {
+      struct Ilk {
+          address flip;  // Liquidator
+          uint256 chop;  // Liquidation Penalty   [ray]
+          uint256 lump;  // Liquidation Quantity  [wad]
+      }
+      function ilks(bytes32) public returns (Ilk memory);
       function cage() public;
+      function spit(bytes32) public;
   }
   contract VowLike {
       function Joy() public returns (uint256);
       function Woe() public returns (uint256);
       function hump() public returns (uint256);
       function heal(uint256 wad) public;
+  }
+  contract Flippy {
+      function cage() public;
   }
 
   contract End {
@@ -147,6 +157,9 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #+END_SRC
 
+
+* Introduction
+Lorem ipsum...
 
 * Setup
 We will require safe addition and multiplication, =ray= fixed-point multiplication, safe =int= casting, and =min=:
@@ -376,6 +389,8 @@ Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fi
       require(live == 0);
       tags[ilk] = tag;
       fixs[ilk] = fix;
+      cat.spit(ilk);
+      Flippy(cat.ilks(ilk).flip).cage();
   }
 #+END_SRC
 
@@ -829,6 +844,7 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
   import {Pit}  from 'dss/pit.sol';
   import {Cat}  from 'dss/cat.sol';
   import {Vow}  from 'dss/vow.sol';
+  import {Flipper} from 'dss/flip.sol';
   import {GemJoin} from 'dss/join.sol';
   import {GemMove, DaiMove} from 'dss/move.sol';
   import {End}  from './cage.sol';
@@ -845,6 +861,8 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
       GemJoin gemA;
       GemMove gemM;
       DaiMove daiM;
+
+      Flipper flip;
 
       bytes32 urn1;
       bytes32 urn2;
@@ -915,15 +933,6 @@ We deploy the necessary components of the system for testing:
       vat.rely(address(cat));
       vow.rely(address(cat));
 
-      end = new End();
-      end.file("vat", address(vat));
-      end.file("pit", address(pit));
-      end.file("cat", address(cat));
-      end.file("vow", address(vow));
-      vat.rely(address(end));
-      pit.rely(address(end));
-      cat.rely(address(end));
-
       gemM = new GemMove(address(vat), "gold");
       vat.rely(address(gemM));
       daiM = new DaiMove(address(vat));
@@ -945,6 +954,22 @@ We deploy the necessary components of the system for testing:
 
       vat.rely(address(pit));
       vat.rely(address(gemA));
+
+      flip = new Flipper(address(daiM), address(gemM));
+      cat.file("gold", "flip", address(flip));
+      cat.file("gold", "chop", ray(1 ether));
+      vat.rely(address(flip));
+      daiM.hope(address(flip));
+
+      end = new End();
+      end.file("vat", address(vat));
+      end.file("pit", address(pit));
+      end.file("cat", address(cat));
+      end.file("vow", address(vow));
+      vat.rely(address(end));
+      pit.rely(address(end));
+      cat.rely(address(end));
+      flip.rely(address(end));
   }
 #+END_SRC
 
