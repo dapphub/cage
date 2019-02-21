@@ -138,7 +138,7 @@
 
 
 * Setup
-We will require safe addition and multiplication, as well as =ray= fixed-point multiplication:
+We will require safe addition and multiplication, =ray= fixed-point multiplication, safe =int= casting, and =min=:
 #+NAME: math
 #+BEGIN_SRC sol
   function add(uint x, uint y) internal pure returns (uint z) {
@@ -267,27 +267,27 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
 
   types
 
-      Can      : uint256
-      Vat      : address
-      Pit      : address
-      Cat      : address
-      Vow      : address
-      Can_vat  : uint256
-      Can_pit  : uint256
-      Can_cat  : uint256
-      Can_vow  : uint256
-      Live     : uint256
-      Vat_live : uint256
-      Pit_live : uint256
-      Cat_live : uint256
-      Vow_live : uint256
-      Ssin     : uint256
-      Ash      : uint256
-      Dai      : uint256
-      Sin      : uint256
-      Vice     : uint256
-      Debt     : uint256
-      Dai_end  : uint256
+      Can         : uint256
+      Vat         : address
+      Pit         : address
+      Cat         : address
+      Vow         : address
+      Can_vat     : uint256
+      Can_pit     : uint256
+      Can_cat     : uint256
+      Can_vow     : uint256
+      Live        : uint256
+      Vat_live    : uint256
+      Pit_live    : uint256
+      Cat_live    : uint256
+      Vow_live    : uint256
+      Ssin        : uint256
+      Ash         : uint256
+      Dai         : uint256
+      Sin         : uint256
+      Vice        : uint256
+      Debt        : uint256
+      Dai_end     : uint256
       Can_vat_vow : uint256
 
   storage
@@ -300,32 +300,34 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
 
   storage Pit
 
-      wards[ACCT_ID] |-> Can_pit
-      live           |-> Pit_live => 0
+      wards[ACCT_ID]   |-> Can_pit
+      live             |-> Pit_live => 0
 
   storage Cat
 
-      wards[ACCT_ID] |-> Can_cat
-      live           |-> Cat_live => 0
+      wards[ACCT_ID]   |-> Can_cat
+      live             |-> Cat_live => 0
 
   storage Vow
 
-      wards[ACCT_ID] |-> Can_vow
-      live           |-> Vow_live => 0
-      Sin            |-> Ssin
-      Ash            |-> Ash
-      Hump           |-> Hump
+      wards[ACCT_ID]   |-> Can_vow
+      live             |-> Vow_live => 0
+      Sin              |-> Ssin
+      Ash              |-> Ash
+      Hump             |-> Hump
 
   storage Vat
 
       wards[ACCT_ID] |-> Can_vat
       wards[Vow]     |-> Can_vat_vow
       live           |-> Vat_live => 0
-      dai[Vow]       |-> Dai  => Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray - #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
-      sin[Vow]       |-> Sin  => Sin  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
-      vice           |-> Vice => Vice - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
-      debt           |-> Debt => Debt - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
-      dai[ACCT_ID]   |-> Dai_end => Dai_end + #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
+      dai[Vow]       |-> Dai      => Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray \
+                                          - #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
+      sin[Vow]       |-> Sin      => Sin  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      vice           |-> Vice     => Vice - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      debt           |-> Debt     => Debt - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray
+      dai[ACCT_ID]   |-> Dai_end  => Dai_end \
+                                          + #min(Hump * dump, Dai  - #min(Dai / #Ray, (Sin / #Ray - Ssin) - Ash) * #Ray)
 
   iff in range uint256
 
@@ -344,18 +346,18 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
 
   iff
 
-      Live     == 1
-      Can      == 1
-      Can_vat  == 1
-      Can_pit  == 1
-      Can_cat  == 1
-      Can_vow  == 1
+      Live        == 1
+      Can         == 1
+      Can_vat     == 1
+      Can_pit     == 1
+      Can_cat     == 1
+      Can_vow     == 1
       Can_vat_vow == 1
 #+END_SRC
 
-The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =wad= if all of it.
+The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =wad= if all of it.  We will also write \( {\tt pump} := \frac{{\tt debt} - {\tt vice}}{{\tt debt} - {\tt vice} - {\tt hump}\cdot{\tt dump}} \) for the /=hump= burn multiplier/.
 
-Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fix=, once for each collateral type. We will also write \( {\tt pump} := \frac{{\tt debt} - {\tt vice}}{{\tt debt} - {\tt vice} - {\tt hump}\cdot{\tt dump}} \) for the /=hump= burn multiplier/.
+Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fix=, once for each collateral type.
 
 #+NAME: cage-ilk
 #+BEGIN_SRC sol
