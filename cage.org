@@ -780,12 +780,14 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 
 Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account for it:
 
+#+NAME: vent
 #+BEGIN_SRC sol
   function vent(uint256 rad) public {
       vat.heal(b32(address(this)), b32(address(this)), u2i(rad));
   }
 #+END_SRC
 
+#+NAME: act-vent
 #+BEGIN_SRC act
   behaviour vent of End
   interface vent(uint256 rad)
