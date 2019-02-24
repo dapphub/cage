@@ -159,7 +159,15 @@
 
 
 * Introduction
-Lorem ipsum...
+Global settlement is the most complex mechanism in =dss=. This is because it must alter the behaviour of almost every component of the system and it must perform under a variety of possible (under)collateralisation regimes. In particular, there are a number of key properties, such as dai and CDP parity, or the lack of race conditions, which should be guaranteed even in edge cases, e.g. in the presence of CDPs which have become less than 100% collateralised. This means that a relatively complex calculation must be performed to determine the correct rates for collateral redemption by dai and CDP owners: this calculation is likely done off-chain and relies on up-to-date price data. Since in some edge cases it will not be possible to satisfy all desirable properties at once, a choice must be made about which to prioritise.
+
+The procedure for global settlement looks roughly as follows:
+1. The top-level =cage= method is called, which puts all system components into post-global settlement mode.
+2. If necessary, the surplus buffer of dai (or a fraction thereof) in the =Vow= is burned.
+3. For each collateral type, dai and CDP collateral redemption rates are calculated and fed into the system via the per-=Ilk= =cage= methods. In the simplest case they are just the price of each collateral type, however if the system is in a regime where there are undercollateralised CDPs, then adjustments must be made, requiring an off-chain calculation. A choice can be made between /CDP parity/ or /dai parity/.
+4. Any ongoing collateral auctions that have not yet raised the dai to cover their debt are blocked from finalising, and are reversed with =spit=, returning the collateral and debt to the original CDP.
+5. CDP owners can now redeem the collateral from their settled positions with =skim=.
+6. dai holders can redeem the collateral they are entitled to by going through =shop=, =pack=, and =cash=.
 
 * Setup
 We will require safe addition and multiplication, =ray= fixed-point multiplication, safe =int= casting, and =min=:
@@ -379,9 +387,9 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       Can_vat_vow == 1
 #+END_SRC
 
-The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =wad= if all of it.  We will also write \( {\tt pump} := \frac{{\tt debt} - {\tt vice}}{{\tt debt} - {\tt vice} - {\tt hump}\cdot{\tt dump}} \) for the /=hump= burn multiplier/.
+The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =WAD= if all of it.
 
-Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fix=, once for each collateral type.
+Next, the per-=Ilk= =cage= method is called, supplying two rates, called =tag= and =fix=, once for each collateral type.
 
 #+NAME: cage-ilk
 #+BEGIN_SRC sol
@@ -389,7 +397,6 @@ Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fi
       require(live == 0);
       tags[ilk] = tag;
       fixs[ilk] = fix;
-      cat.spit(ilk);
       Flippy(cat.ilks(ilk).flip).cage();
   }
 #+END_SRC
@@ -403,6 +410,8 @@ Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fi
 
       Can  : uint256
       Live : uint256
+      Cat  : address CatLike
+      Flip : address Flippy
 
   storage
 
@@ -411,38 +420,47 @@ Next, the per-=Ilk= =cage= method is called, supplying a quantity called the =fi
       tags[ilk]        |-> _ => tag
       fixs[ilk]        |-> _ => fix
 
+  storage Cat
+
+      ilks[ilk].flip   |-> Flip
+
+  storage Flip
+
+      wards[CALLER_ID] |-> Can_flip
+      live             |-> Flip_live => 0
+
   iff
 
-      Can  == 1
-      Live == 0
+      Can      == 1
+      Live     == 0
+      Can_flip == 1
 #+END_SRC
+
+At this point, any outstanding `Flip` auctions that have not yet raised their target amount of dai can be cancelled ("yanked") by calling the public method =Vow.spit(uint id)=. When an auction is yanked, the collateral and debt are assigned back to the original CDP, which will then be settled as if it had not yet been liquidated, and the highest bidder is refunded their dai. Auctions that have already raised their target amount of dai are allowed to proceed as normal and can receive further =dent= bids.
+
+For the purposes of the upcoming calculation, we will assume that all
+yankable auctions have been yanked. In particular by the /adjusted dai supply/, denoted by \( {\tt debt}^\prime \), we will mean the predicted value of the total dai supply once all outstanding auctions have finalised, which requires no further assumptions since all auctions remaining at this point have raised their target amounts of dai. In other words, we can assume without any loss of generality that no collateral auctions will finish in deficit.
 
 ** Interlude: the =fix= computation
 
 The =fix= represents the quantity of =gem= that a user will be able to redeem for one dai. We now describe the procedure by which it should be computed, presumably by an off-chain agent. In the following calculation, for notational simplicity, the appropriate operations for fixed point units are implicit, e.g. \( {\tt hump} \cdot {\tt dump} \) is the number of dai from the =hump= that will be burned, \( {\tt art_{iu}} \cdot {\tt rate_i} \) is the outstanding dai debt of CDP =u=, etc.
 
-*** TODO If the ongoing collateral auctions finish in deficit
-
-*** If the ongoing collateral auctions finish in adequacy
-
-We assume that all of the collateral pending liquidation in the =Vow= will raise enough dai to cover the outstanding =vice=. In the current design, this is impossible to predict in advance, since the auctions will continue running well past the time that global settlement is initiated. Thus, this is a risk that we have to tolerate.
-
-In this case, the total quantity of dai that must be redeemable through =End= is the total dai supply, minus the amount of dai that will be consumed through =flip= and =flop= auctions, minus the amount from the =hump= that was burned during =Vow.cage(dump)=, i.e.:
+In this case, the total quantity of dai that must be redeemable through =End= is the adjusted dai supply \( {\tt debt}^\prime \) minus the amount from the =hump= that was burned during =Vow.cage(dump)=, i.e.:
 
 \[
-{\tt debt} - {\tt vice} - {\tt hump \cdot dump}
+{\tt debt}^\prime - {\tt hump \cdot dump}
 \]
 
 The first priority is to ensure that there is no race condition. That is to say, that with the \( {\tt fix_i}\) and \({\tt tag_i} \) that we chosen, every dai holder will be able to redeem the same quantity of =gem=, regardless of when they interact with the =End=, i.e.:
 
 \[
-\sum_u {\tt war_{iu}} = {\tt fix_i} \cdot ({\tt debt} - {\tt vice} - {\tt hump \cdot dump })
+\sum_u {\tt war_{iu}} = {\tt fix_i} \cdot ({\tt debt}^\prime - {\tt hump \cdot dump })
 \]
 
 We shall call this the /no-race property/. Setting \( {\tt war_{iu}} \) to be \( \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i }) \), where \( {\tt tag_i} \) is some /CDP settlement rate/, to be determined, we can solve for \( {\tt fix_i } \):
 
 \[
-{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt}^\prime - {\tt hump \cdot dump }}
 \]
 
 Another desirable feature is for all =gem= redeemable for one dai to be worth one dollar:
@@ -464,11 +482,13 @@ We call this the /CDP parity property/.
 Consider the case where no CDPs are undercollateralised, i.e. that for all =u=, \( {\tt art_{iu}} \cdot {\tt rate_i} \geq {\tt ink_{iu}} \cdot p_{{\tt i}} \). Then we can satisfy all three constraints simultaneously simply by setting \( {\tt tag_i} = \frac{1}{p_{{\tt i}}} \):
 
 \[
-{\tt fix_i} = \frac{{\tt rate_i} \cdot {\tt tag_i } \cdot {\tt Art_i}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = \frac{{\tt rate_i} \cdot {\tt Art_i}}{p_{{\tt i}}\cdot({\tt debt} - {\tt vice} - {\tt hump \cdot dump })}
+{\tt fix_i} = \frac{{\tt rate_i} \cdot {\tt tag_i } \cdot {\tt Art_i}}{{\tt debt}^\prime - {\tt hump \cdot dump }} = \frac{{\tt rate_i} \cdot {\tt Art_i}}{p_{{\tt i}}\cdot({\tt debt}^\prime - {\tt hump \cdot dump })}
 \]
 
+Writing \( {\tt pump} := \frac{{\tt debt}^\prime}{{\tt debt}^\prime - {\tt hump}\cdot{\tt dump}} \) for the /=hump= burn multiplier/:
+
 \[
-\sum_i {\tt fix_i} \cdot p_{{\tt i}} = \frac{\sum_i {\tt rate_i} \cdot {\tt Art_i}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = \frac{{\tt debt} - {\tt vice}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = {\tt pump}
+\sum_i {\tt fix_i} \cdot p_{{\tt i}} = \frac{\sum_i {\tt rate_i} \cdot {\tt Art_i}}{{\tt debt}^\prime - {\tt hump \cdot dump }} = \frac{{\tt debt}^\prime}{{\tt debt}^\prime - {\tt hump \cdot dump }} = {\tt pump}
 \]
 
 from which it is clear that we could use \( {\tt dump } = 0 \) and satisfy the no-race property and both parity properties.
@@ -481,14 +501,14 @@ Now if some CDPs had been undercollateralised, we would have had instead:
 
 \begin{equation}
 \label{eq:fixcdpparity}
-{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, \frac{{\tt art_{iu}} \cdot {\tt rate_i}}{p_{{\tt i}}})}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} = \frac{{\tt Art_i} \cdot {\tt rate_i} - {\tt gap_i}}{p_{{\tt i}}({\tt debt} - {\tt vice} - {\tt hump \cdot dump })}
+{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, \frac{{\tt art_{iu}} \cdot {\tt rate_i}}{p_{{\tt i}}})}{{\tt debt}^\prime - {\tt hump \cdot dump }} = \frac{{\tt Art_i} \cdot {\tt rate_i} - {\tt gap_i}}{p_{{\tt i}}({\tt debt}^\prime - {\tt hump \cdot dump })}
 \end{equation}
 
 and the value redeemable from one dai would be:
 
 \begin{align*}
-\sum_i {\tt fix_i} \cdot p_{{\tt i}} & = \frac{\sum_i {\tt Art_i} \cdot {\tt rate_i} - {\tt gap_i} }{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }} \\
-                                     & = \frac{{\tt debt} - {\tt Gap}}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+\sum_i {\tt fix_i} \cdot p_{{\tt i}} & = \frac{\sum_i {\tt Art_i} \cdot {\tt rate_i} - {\tt gap_i} }{{\tt debt}^\prime - {\tt hump \cdot dump }} \\
+                                     & = \frac{{\tt debt} - {\tt Gap}}{{\tt debt}^\prime - {\tt hump \cdot dump }}
 \end{align*}
 
 where \( {\tt gap_i} := \sum_u \mathrm{max} (0, {\tt art_{iu}} \cdot {\tt rate_i} - p_{{\tt i}} \cdot {\tt ink_i}) \) and \( {\tt Gap} := \sum_i {\tt gap_i} \), are the per =Ilk= and global gross negative CDP equity, respectively. Thus, though we have ensured the no-race and CDP parity properties, we have not necessarily ensured dai parity. However, if =hump= is large enough relative to =Gap=, it may be possible to ensure that the above expression equals one, solely by increasing =dump=.
@@ -499,7 +519,7 @@ We might also be able to set \( {\tt tag_i } \) and \( {\tt fix_i } \) so as to 
 
 \begin{equation}
 \label{eq:fixdaiparity}
-{\tt fix_i} \cdot p_{{\tt i}} = \frac{{\tt Art_i} \cdot {\tt rate_i}}{{\tt debt} - {\tt vice}}
+{\tt fix_i} \cdot p_{{\tt i}} = \frac{{\tt Art_i} \cdot {\tt rate_i}}{{\tt debt}^\prime}
 \end{equation}
 
 which will ensure that \( \sum_i {\tt fix_i} \cdot p_{{\tt i}} = 1 \) due to the fundamental equation of dai.
@@ -520,7 +540,7 @@ If socialising proportionally to debt, we have to solve the following for \( {\t
 
 \begin{equation}
 \label{eq:tagdaiparity-debt}
-\frac{{\tt Art_i} \cdot {\tt rate_i}}{{\tt debt} - {\tt vice}} = p_{{\tt i}} \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt} - {\tt vice} - {\tt hump \cdot dump }}
+\frac{{\tt Art_i} \cdot {\tt rate_i}}{{\tt debt}^\prime} = p_{{\tt i}} \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt}^\prime - {\tt hump \cdot dump }}
 \end{equation}
 
 This is a linear optimisation problem without a closed-form solution, which can be solved numerically by linear complementarity methods. It is easy to see that a solution exists precisely when
@@ -882,6 +902,8 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
       // <<test-cage-undercollateralised-dai-parity-collateral>>
 
       <<test-cage-undercollateralised-dai-parity-debt>>
+
+      // <<test-cage-spit>>
   }
 #+END_SRC
 
@@ -1285,5 +1307,14 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       assertEq(gem("gold", bytes32(bytes20(address(end)))), 0);
       // some dust remains in the adapter because of rounding:
       assertTrue(gold.balanceOf(address(gemA)) < 2);
+  }
+#+END_SRC
+
+** TODO Testing auction yanking
+
+#+NAME: test-cage-spit
+#+BEGIN_SRC sol
+  function test_cage_spit() public {
+      // TODO
   }
 #+END_SRC
