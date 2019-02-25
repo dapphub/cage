@@ -33,15 +33,17 @@
 
   contract VatLike {
       struct Ilk {
-          uint256 take;
           uint256 rate;
-          uint256 Ink;
           uint256 Art;
+          uint256 spot;
+          uint256 line;
+          uint256 dust;
       }
       struct Urn {
           uint256 ink;
           uint256 art;
       }
+      function sin(bytes32) public view returns (uint);
       function dai(bytes32 lad) public returns (uint256);
       function ilks(bytes32 ilk) public returns (Ilk memory);
       function urns(bytes32 ilk, bytes32 urn) public returns (Urn memory);
@@ -52,9 +54,6 @@
       function heal(bytes32 u, bytes32 v, int256 rad) public;
       function cage() public;
   }
-  contract PitLike {
-      function cage() public;
-  }
   contract CatLike {
       struct Ilk {
           address flip;  // Liquidator
@@ -63,7 +62,6 @@
       }
       function ilks(bytes32) public returns (Ilk memory);
       function cage() public;
-      function spit(bytes32) public;
   }
   contract VowLike {
       function Joy() public returns (uint256);
@@ -72,7 +70,22 @@
       function heal(uint256 wad) public;
   }
   contract Flippy {
+      struct Bid {
+          uint256 bid;
+          uint256 lot;
+          address guy;
+          uint48  tic;
+          uint48  end;
+          bytes32 urn;
+          address gal;
+          uint256 tab;
+      }
       function cage() public;
+      function bids(uint id) public view returns (Bid memory);
+      function yank(uint id) public;
+  }
+  contract GemLike {
+      function push(bytes32,uint256) public;
   }
 
   contract End {
@@ -100,6 +113,8 @@
 
       <<cage-ilk>>
 
+      <<skip>>
+
       <<skim>>
 
       <<free>>
@@ -123,6 +138,8 @@
    <<act-cage>>
 
    <<act-cage-ilk>>
+
+   <<act-skip>>
 
    <<act-skim>>
 
@@ -165,35 +182,43 @@ The procedure for global settlement looks roughly as follows:
 1. The top-level =cage= method is called, which puts all system components into post-global settlement mode.
 2. If necessary, the surplus buffer of dai (or a fraction thereof) in the =Vow= is burned.
 3. For each collateral type, dai and CDP collateral redemption rates are calculated and fed into the system via the per-=Ilk= =cage= methods. In the simplest case they are just the price of each collateral type, however if the system is in a regime where there are undercollateralised CDPs, then adjustments must be made, requiring an off-chain calculation. A choice can be made between /CDP parity/ or /dai parity/.
-4. Any ongoing collateral auctions that have not yet raised the dai to cover their debt are blocked from finalising, and are reversed with =spit=, returning the collateral and debt to the original CDP.
+4. Any ongoing collateral auctions that have not yet raised the dai to cover their debt are blocked from finalising, and are reversed with =skip=, returning the collateral and debt to the original CDP.
 5. CDP owners can now redeem the collateral from their settled positions with =skim=.
 6. dai holders can redeem the collateral they are entitled to by going through =shop=, =pack=, and =cash=.
 
 * Setup
-We will require safe addition and multiplication, =ray= fixed-point multiplication, safe =int= casting, and =min=:
+We will require safe addition, subtraction, and multiplication, =ray= fixed-point multiplication, safe =int= casting, and =min=:
 #+NAME: math
 #+BEGIN_SRC sol
   function add(uint x, uint y) internal pure returns (uint z) {
       z = x + y;
       require(z >= x);
   }
+  function sub(uint x, uint y) internal pure returns (int z) {
+      z = int(x - y);
+      require(x < y || z >= 0);
+      require(x > y || z <= 0);
+  }
   function mul(uint x, uint y) internal pure returns (uint z) {
       z = x * y;
       require(y == 0 || z / y == x);
   }
-  uint constant ONE = 10 ** 27;
+
+  uint constant RAY = 10 ** 27;
   function rmul(uint x, uint y) internal pure returns (uint z) {
       z = x * y;
       require(y == 0 || z / y == x);
-      z = z / ONE;
+      z = z / RAY;
   }
   function u2i(uint x) internal pure returns (int y) {
       y = int(x);
       require(y >= 0);
   }
-
   function min(uint x, uint y) internal pure returns (uint z) {
-      if (x <= y) { z = x; } else { z = y; }
+      if (x > y) { z = y; } else { z = x; }
+  }
+  function min(int x, int y) internal pure returns (int z) {
+      if (x > y) { z = y; } else { z = x; }
   }
 #+END_SRC
 
@@ -209,7 +234,6 @@ The storage layout of the =End= is as follows:
 #+NAME: data
 #+BEGIN_SRC sol
   VatLike  public vat;
-  PitLike  public pit;
   CatLike  public cat;
   VowLike  public vow;
   uint256  public live;
@@ -245,7 +269,6 @@ The target contracts of the =End= can be modified by owners in-flight:
 #+BEGIN_SRC sol
   function file(bytes32 what, address data) public auth {
       if (what == "vat") vat = VatLike(data);
-      if (what == "pit") pit = PitLike(data);
       if (what == "cat") cat = CatLike(data);
       if (what == "vow") vow = VowLike(data);
   }
@@ -259,7 +282,6 @@ The target contracts of the =End= can be modified by owners in-flight:
   types
 
       Vat_was  : address
-      Pit_was  : address
       Cat_was  : address
       Vow_was  : address
 
@@ -267,7 +289,6 @@ The target contracts of the =End= can be modified by owners in-flight:
 
       wards[CALLER_ID] |-> Can
       Vat  |-> Vat_was => #if what == #string2Word("vat")  #then data else Vat_was
-      Pit  |-> Pit_was => #if what == #string2Word("pit")  #then data else Pit_was
       Cat  |-> Cat_was => #if what == #string2Word("cat")  #then data else Cat_was
       Vow  |-> Vow_was => #if what == #string2Word("vow")  #then data else Vow_was
 
@@ -284,10 +305,9 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
   function cage(uint256 dump) public auth {
       require(live == 1);
       vat.cage();
-      pit.cage();
       cat.cage();
       vow.heal(min(vow.Joy(), vow.Woe()));
-      vat.move(b32(address(vow)), b32(address(this)), u2i(min(mul(vow.Joy(), ONE), mul(vow.hump(), dump))));
+      vat.move(b32(address(vow)), b32(address(this)), u2i(min(mul(vow.Joy(), RAY), mul(vow.hump(), dump))));
       live = 0;
   }
 #+END_SRC
@@ -301,16 +321,13 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
 
       Can         : uint256
       Vat         : address
-      Pit         : address
       Cat         : address
       Vow         : address
       Can_vat     : uint256
-      Can_pit     : uint256
       Can_cat     : uint256
       Can_vow     : uint256
       Live        : uint256
       Vat_live    : uint256
-      Pit_live    : uint256
       Cat_live    : uint256
       Vow_live    : uint256
       Ssin        : uint256
@@ -325,15 +342,9 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
   storage
 
       wards[CALLER_ID] |-> Can
-      pit              |-> Pit
       cat              |-> Cat
       vow              |-> Vow
       live             |-> Live => 0
-
-  storage Pit
-
-      wards[ACCT_ID]   |-> Can_pit
-      live             |-> Pit_live => 0
 
   storage Cat
 
@@ -381,7 +392,6 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       Live        == 1
       Can         == 1
       Can_vat     == 1
-      Can_pit     == 1
       Can_cat     == 1
       Can_vow     == 1
       Can_vat_vow == 1
@@ -436,7 +446,31 @@ Next, the per-=Ilk= =cage= method is called, supplying two rates, called =tag= a
       Can_flip == 1
 #+END_SRC
 
-At this point, any outstanding `Flip` auctions that have not yet raised their target amount of dai can be cancelled ("yanked") by calling the public method =Vow.spit(uint id)=. When an auction is yanked, the collateral and debt are assigned back to the original CDP, which will then be settled as if it had not yet been liquidated, and the highest bidder is refunded their dai. Auctions that have already raised their target amount of dai are allowed to proceed as normal and can receive further =dent= bids.
+At this point, any outstanding `Flip` auctions that have not yet raised their target amount of dai can be cancelled ("yanked") by calling the public method =skip(uint id)=. When an auction is yanked, the collateral and debt are assigned back to the original CDP, which will then be settled as if it had not yet been liquidated, and the highest bidder is refunded their dai. Auctions that have already raised their target amount of dai are allowed to proceed as normal and can receive further =dent= bids.
+
+#+NAME: skip
+#+BEGIN_SRC sol
+  function skip(bytes32 ilk, uint256 id) public {
+      require(live == 0);
+
+      address flip = cat.ilks(ilk).flip;
+      Flippy.Bid memory bid = Flippy(flip).bids(id);
+
+      VatLike.Ilk memory i = vat.ilks(ilk);
+      uint256 dink = rmul(bid.lot, RAY);
+      uint256 dart = mul(bid.tab, RAY) / i.rate;
+
+      Flippy(flip).yank(id);
+
+      vat.heal(b32(address(vow)), b32(address(vow)), min(0, sub(vat.sin(b32(address(vow))), mul(i.rate, dart))));
+      vat.grab(ilk, bid.urn, b32(address(this)), b32(address(vow)), int(dink), int(dart));
+  }
+#+END_SRC
+
+#+NAME: act-skip
+#+BEGIN_SRC act
+
+#+END_SRC
 
 For the purposes of the upcoming calculation, we will assume that all
 yankable auctions have been yanked. In particular by the /adjusted dai supply/, denoted by \( {\tt debt}^\prime \), we will mean the predicted value of the total dai supply once all outstanding auctions have finalised, which requires no further assumptions since all auctions remaining at this point have raised their target amounts of dai. In other words, we can assume without any loss of generality that no collateral auctions will finish in deficit.
@@ -524,19 +558,9 @@ We might also be able to set \( {\tt tag_i } \) and \( {\tt fix_i } \) so as to 
 
 which will ensure that \( \sum_i {\tt fix_i} \cdot p_{{\tt i}} = 1 \) due to the fundamental equation of dai.
 
-It remains to choose the \( {\tt tag_i} \) such that losses from undercollateralised CDPs of =Ilk= =i= are socialised across all CDPs of the =Ilk=. This means that we will only be able to guarantee parity in the case that each =Ilk= is on aggregate not undercollateralised. We also have a choice about how exactly to socialise losses across CDPs: proportionally to their debt or to their collateral.
+It remains to choose the \( {\tt tag_i} \) such that losses from undercollateralised CDPs of =Ilk= =i= are socialised across all CDPs of the =Ilk=. This means that we will only be able to guarantee parity in the case that each =Ilk= is on aggregate not undercollateralised. 
 
-****** TODO socialising proportionally to collateral
-
-If socialising proportionally to collateral, we have:
-\begin{equation}
-\label{eq:tagdaiparity-collateral}
-{\tt tag_i } = ???
-\end{equation}
-
-****** socialising proportionally to debt
-
-If socialising proportionally to debt, we have to solve the following for \( {\tt tag_i} \):
+When socialising proportionally to debt, e have to solve the following for \( {\tt tag_i} \):
 
 \begin{equation}
 \label{eq:tagdaiparity-debt}
@@ -557,10 +581,10 @@ To summarise, when there are undercollateralised CDPs, the options are:
 set \( {\tt tag_i} = \frac{1}{p_i} \) and \( {\tt fix_i} \) according to formula \ref{eq:fixcdpparity}. It may still be possible to also ensure dai parity with =dump= if the =hump= is large enough.
 ***** Ensure DAI parity:
 in both cases, set =dump = 1= and \( {\tt fix_i} \) according to formula \ref{eq:fixdaiparity}.
-****** TODO by socialising proportionally to collateral
-Set \( {\tt tag_i} \) according to formula \ref{eq:tagdaiparity-collateral}.
 ****** by socialising proportionally to debt
 Set \( {\tt tag_i} \) according to formula \ref{eq:tagdaiparity-debt}.
+****** TODO by socialising proportionally to equity
+****** TODO by socialising proportionally to collateral
 
 **** TODO In the presence of an undercollateralised =Ilk=
 
@@ -576,7 +600,6 @@ Once =tag_i= has been provided, individual CDPs can be processed with =skim=, se
       VatLike.Ilk memory i = vat.ilks(ilk);
       VatLike.Urn memory u = vat.urns(ilk, urn);
 
-      // assumes take is ONE
       uint war = min(u.ink, rmul(rmul(u.art, i.rate), tags[ilk]));
 
       vat.grab(ilk, urn, b32(address(this)), b32(address(this)), -int(war), -int(u.art));
@@ -684,41 +707,39 @@ A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way proc
 
 #+NAME: shop
 #+BEGIN_SRC sol
-  function shop() public {
-      uint rad = vat.dai(b32(msg.sender));
-      vat.heal(b32(address(this)), b32(msg.sender), int(rad));
-      dai[msg.sender] = add(dai[msg.sender], rad);
+  function shop(uint256 wad) public {
+      vat.heal(b32(address(this)), b32(msg.sender), int(mul(wad, RAY)));
+      dai[msg.sender] = add(dai[msg.sender], wad);
   }
 #+END_SRC
 
 #+NAME: act-shop
 #+BEGIN_SRC act
   behaviour shop of End
-  interface shop()
+  interface shop(uint256 wad)
 
   types
 
       Vat : address
-      Rad : uint256
       Sin : uint256
 
   storage
 
       vat            |-> Vat
-      dai[CALLER_ID] |-> Dai => Dai + Rad
+      dai[CALLER_ID] |-> Dai => Dai + Wad
 
   storage Vat
 
       wards[ACCT_ID] |-> Can
       dai[CALLER_ID] |-> Rad  => 0
-      sin[ACCT_ID]   |-> Sin  => Sin - Rad
-      vice           |-> Vice => Vice - Rad
-      debt           |-> Debt => Debt - Rad
+      sin[ACCT_ID]   |-> Sin  => Sin - wad * #Ray
+      vice           |-> Vice => Vice - wad * #Ray
+      debt           |-> Debt => Debt - wad * #Ray
 
   iff in range uint256
 
-      Dai + Rad
-      Sin - Rad
+      Dai + wad * #Ray
+      Sin - wad * #Ray
 
   iff
 
@@ -790,6 +811,7 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 
   iff in range uint256
 
+      Bag * Fix
       Gem_end - #rmul(Bag, Fix)
       Gem_lad + #rmul(Bag, Fix)
 
@@ -847,7 +869,7 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
 
 * TODO NFT Settlement Modules
 
-NFTs need to be dealt with separately, in a manner similar to the collateral which is already undergoing liquidation at the time of cage.
+NFTs need to be dealt with separately, by assigning ownership of the tokens and their associated debt to a special settlement module.
 
 * Tests
 
@@ -863,7 +885,6 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
   import "ds-token/token.sol";
 
   import {Vat}  from 'dss/vat.sol';
-  import {Pit}  from 'dss/pit.sol';
   import {Cat}  from 'dss/cat.sol';
   import {Vow}  from 'dss/vow.sol';
   import {Flipper} from 'dss/flip.sol';
@@ -874,7 +895,6 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
   contract EndTest is DSTest {
       Vat   vat;
       End   end;
-      Pit   pit;
       Vow   vow;
       Cat   cat;
 
@@ -903,7 +923,7 @@ NFTs need to be dealt with separately, in a manner similar to the collateral whi
 
       <<test-cage-undercollateralised-dai-parity-debt>>
 
-      // <<test-cage-spit>>
+      <<test-cage-skip>>
   }
 #+END_SRC
 
@@ -913,21 +933,25 @@ Some helper functions for the test contract:
 
 #+NAME: test-helper
 #+BEGIN_SRC sol
-  uint constant ONE = 10 ** 27;
+  uint constant WAD = 10 ** 18;
+  uint constant RAY = 10 ** 27;
 
   function ray(uint wad) internal pure returns (uint) {
       return wad * 10 ** 9;
   }
   function rad(uint wad) internal pure returns (uint) {
-      return wad * ONE;
+      return wad * RAY;
   }
   function rmul(uint x, uint y) internal pure returns (uint z) {
       z = x * y;
       require(y == 0 || z / y == x);
-      z = z / ONE;
+      z = z / RAY;
+  }
+  function dai(bytes32 urn) internal view returns (uint) {
+      return vat.dai(urn) / RAY;
   }
   function gem(bytes32 ilk, bytes32 urn) internal view returns (uint) {
-      return vat.gem(ilk, urn) / 10 ** 27;
+      return vat.gem(ilk, urn);
   }
   function ink(bytes32 ilk, bytes32 urn) internal view returns (uint) {
       (uint ink_, uint art_) = vat.urns(ilk, urn); art_;
@@ -946,14 +970,12 @@ We deploy the necessary components of the system for testing:
   function setUp() public {
       vat = new Vat();
 
-      pit = new Pit(address(vat));
-      vat.rely(address(pit));
-
       vow = new Vow();
       vow.file("vat", address(vat));
       vat.rely(address(vow));
 
       cat = new Cat(address(vat));
+      cat.file("vow", address(vow));
       vat.rely(address(cat));
       vow.rely(address(cat));
 
@@ -969,29 +991,27 @@ We deploy the necessary components of the system for testing:
       gemA = new GemJoin(address(vat), "gold", address(gold));
 
       // 1 gold = 6 dai and liquidation ratio is 200%
-      pit.file("gold", "spot", ray(3 ether));
-      pit.file("gold", "line", 1000 ether);
-      pit.file("Line", uint(1000 ether));
+      vat.file("gold", "spot",    ray(3 ether));
+      vat.file("gold", "line", rad(1000 ether));
+      vat.file("Line",         rad(1000 ether));
 
       gold.approve(address(gemA));
       gold.approve(address(vat));
 
-      vat.rely(address(pit));
       vat.rely(address(gemA));
 
       flip = new Flipper(address(daiM), address(gemM));
       cat.file("gold", "flip", address(flip));
       cat.file("gold", "chop", ray(1 ether));
+      cat.file("gold", "lump", uint(15 ether));
       vat.rely(address(flip));
       daiM.hope(address(flip));
 
       end = new End();
       end.file("vat", address(vat));
-      end.file("pit", address(pit));
       end.file("cat", address(cat));
       end.file("vow", address(vow));
       vat.rely(address(end));
-      pit.rely(address(end));
       cat.rely(address(end));
       flip.rely(address(end));
   }
@@ -1004,12 +1024,10 @@ The first basic test ensures that =end.cage(hump)= is able to run and sets the l
   function test_cage_basic() public {
       assert(end.live() == 1);
       assert(vat.live() == 1);
-      assert(pit.live() == 1);
       assert(cat.live() == 1);
       end.cage(0);
       assert(end.live() == 0);
       assert(vat.live() == 0);
-      assert(pit.live() == 0);
       assert(cat.live() == 0);
   }
 #+END_SRC
@@ -1030,7 +1048,7 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
-      pit.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
+      vat.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
 
       // global checks:
@@ -1039,8 +1057,8 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
 
       // tag and fix computation
       uint hump = 0;
-      uint tag = ONE / 5;
-      uint fix = ONE / 5;
+      uint tag = RAY / 5;
+      uint fix = RAY / 5;
       end.cage(hump);
       end.cage("gold", tag, fix);
       end.skim("gold", urn1);
@@ -1061,7 +1079,7 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       gemA.exit(urn1, address(this), 7 ether);
 
       // dai redemption
-      end.shop();
+      end.shop(15 ether);
 
       // global checks:
       // no need for vent
@@ -1072,7 +1090,7 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       end.cash("gold");
 
       // local checks:
-      assertEq(vat.dai(urn1), 0);
+      assertEq(dai(urn1), 0);
       assertEq(gem("gold", urn1), 3 ether);
       gemA.exit(urn1, address(this), 3 ether);
 
@@ -1095,13 +1113,13 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
-      pit.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
+      vat.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
 
       // make a second CDP:
       urn2 = bytes32(uint256(bytes32(bytes20(address(this)))) + 1);
       gemA.join(urn2, 1 ether);
-      pit.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
+      vat.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
       // this urn has 0 gem, 1 ink, 3 tab, 3 dai
 
       // global checks:
@@ -1111,9 +1129,9 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       // tag and fix computation
       uint hump = 0;
       // CDP holders settled at price of 2
-      uint tag = ONE / 2;
+      uint tag = RAY / 2;
       // DAI holders get ~0.944
-      uint fix = (17 * ONE) / 36;
+      uint fix = (17 * RAY) / 36;
       end.cage(hump);
       end.cage("gold", tag, fix);
       end.skim("gold", urn1);
@@ -1137,7 +1155,7 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       gemA.exit(urn1, address(this), 2.5 ether);
 
       // first dai redemption
-      end.shop();
+      end.shop(15 ether);
 
       // global checks:
       assertEq(vat.debt(), rad(3 ether));
@@ -1147,14 +1165,14 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       end.cash("gold");
 
       // local checks:
-      assertEq(vat.dai(urn1), 0);
+      assertEq(dai(urn1), 0);
       assertEq(gem("gold", urn1), rmul(fix, 15 ether));
       gemA.exit(urn1, address(this), rmul(fix, 15 ether));
 
       // gather remaining dai into urn1
       daiM.move(urn2, urn1, 3 ether);
       // second dai redemption
-      end.shop();
+      end.shop(3 ether);
 
       // global checks:
       assertEq(vat.debt(), 0);
@@ -1164,32 +1182,23 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       end.cash("gold");
 
       // local checks:
-      assertEq(vat.dai(urn1), 0);
+      assertEq(dai(urn1), 0);
       assertEq(gem("gold", urn1), rmul(fix, 3 ether));
       gemA.exit(urn1, address(this), rmul(fix, 3 ether));
 
-      assertEq(gem("gold", bytes32(bytes20(address(end)))), 0);
-      // some dust remains in the adapter because of rounding:
-      assertTrue(gold.balanceOf(address(gemA)) < 2);
+      // some dust remains in the End because of rounding:
+      assertEq(gem("gold", bytes32(bytes20(address(end)))), 1);
+      assertEq(gold.balanceOf(address(gemA)), 1);
   }
 #+END_SRC
 
-** TODO Testing the case with dai parity
+** Testing the case with dai parity
 
 We now test the case when there are two CDPs, one of which is undercollateralised, but such that the =Ilk= as a whole is well collateralised.
 
-*** TODO socialising proportionally to collateral
+*** socialising proportionally to debt
 
-#+NAME: test-cage-undercollateralised-dai-parity-collateral
-#+BEGIN_SRC sol
-  function test_cage_undercollateralised_dai_parity_collateral() public {
-      // TODO
-  }
-#+END_SRC
-
-*** DONE socialising proportionally to debt
-
-Here's a simple way we can compute the (exact) numerical solution using a simple bisection method:
+Here's a simple way we can compute the (exact) numerical solution using a bisection method:
 
 #+BEGIN_SRC python :results output
   WAD = 10**18
@@ -1231,13 +1240,13 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       // make a CDP:
       urn1 = bytes32(bytes20(address(this)));
       gemA.join(urn1, 10 ether);
-      pit.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
+      vat.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
 
       // make a second CDP:
       urn2 = bytes32(uint256(bytes32(bytes20(address(this)))) + 1);
       gemA.join(urn2, 1 ether);
-      pit.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
+      vat.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
       // this urn has 0 gem, 1 ink, 3 tab, 3 dai
 
       // global checks:
@@ -1249,7 +1258,7 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       // CDP holders settled at price of 1.875
       uint tag = 533333333333333333358631380;
       // DAI holders get 1.0
-      uint fix = ONE / 2;
+      uint fix = RAY / 2;
       end.cage(hump);
       end.cage("gold", tag, fix);
       end.skim("gold", urn1);
@@ -1273,7 +1282,7 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       gemA.exit(urn1, address(this), 2 ether);
 
       // first dai redemption
-      end.shop();
+      end.shop(15 ether);
 
       // global checks:
       assertEq(vat.debt(), rad(3 ether));
@@ -1283,14 +1292,14 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       end.cash("gold");
 
       // local checks:
-      assertEq(vat.dai(urn1), 0);
+      assertEq(dai(urn1), 0);
       assertEq(gem("gold", urn1), rmul(fix, 15 ether));
       gemA.exit(urn1, address(this), rmul(fix, 15 ether));
 
       // gather remaining dai into urn1
       daiM.move(urn2, urn1, 3 ether);
       // second dai redemption
-      end.shop();
+      end.shop(3 ether);
 
       // global checks:
       assertEq(vat.debt(), 0);
@@ -1300,7 +1309,7 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       end.cash("gold");
 
       // local checks:
-      assertEq(vat.dai(urn1), 0);
+      assertEq(dai(urn1), 0);
       assertEq(gem("gold", urn1), rmul(fix, 3 ether));
       gemA.exit(urn1, address(this), rmul(fix, 3 ether));
 
@@ -1310,11 +1319,70 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
   }
 #+END_SRC
 
-** TODO Testing auction yanking
+** Testing auction yanking
 
-#+NAME: test-cage-spit
+#+NAME: test-cage-skip
 #+BEGIN_SRC sol
-  function test_cage_spit() public {
-      // TODO
+  function test_cage_skip() public {
+      // make a CDP:
+      urn1 = bytes32(bytes20(address(this)));
+      gemA.join(urn1, 10 ether);
+      vat.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
+      // this urn has 0 gem, 10 ink, 15 tab, 15 dai
+      
+      vat.file("gold", "spot", ray(1 ether)); // now unsafe
+
+      uint id = cat.bite("gold", urn1);       // CDP liquidated
+      assertEq(vat.vice(), rad(15 ether));    // now there is sin
+      uint auction = cat.flip(id, 15 ether);  // flip all the tab
+      flip.tend(auction, 10 ether, 1 ether);  // bid 1 dai
+      assertEq(dai(urn1), 14 ether);
+
+      // tag and fix computation
+      uint hump = 0;
+      uint tag = RAY / 5;
+      uint fix = RAY / 5;
+      end.cage(hump);
+      end.cage("gold", tag, fix);
+
+      end.skip("gold", auction);
+      assertEq(dai(urn1), 15 ether);          // bid refunded
+      assertEq(vat.vice(), 0);                // sin is gone
+
+      end.skim("gold", urn1);
+
+      // local checks:
+      assertEq(art("gold", urn1), 0);
+      assertEq(ink("gold", urn1), 7 ether);
+      assertEq(vat.sin(bytes32(bytes20(address(end)))), rad(15 ether));
+
+      // global checks:
+      assertEq(vat.debt(), rad(15 ether));
+      assertEq(vat.vice(), rad(15 ether));
+
+      // CDP closing
+      end.free("gold");
+      assertEq(ink("gold", urn1), 0);
+      assertEq(gem("gold", urn1), 7 ether);
+      gemA.exit(urn1, address(this), 7 ether);
+
+      // dai redemption
+      end.shop(15 ether);
+
+      // global checks:
+      // no need for vent
+      assertEq(vat.debt(), 0);
+      assertEq(vat.vice(), 0);
+
+      end.pack("gold");
+      end.cash("gold");
+
+      // local checks:
+      assertEq(dai(urn1), 0);
+      assertEq(gem("gold", urn1), 3 ether);
+      gemA.exit(urn1, address(this), 3 ether);
+
+      assertEq(gem("gold", bytes32(bytes20(address(end)))), 0);
+      assertEq(gold.balanceOf(address(gemA)), 0);
   }
 #+END_SRC
