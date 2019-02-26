@@ -1,4 +1,4 @@
-#+TITLE: Global Settlement
+#+TITLE: `cage`
 #+DATE: <2019-01-24 Thu>
 #+AUTHOR:
 #+OPTIONS: ':nil *:t -:t ::t <:t H:4 \n:nil ^:t arch:headline
@@ -176,10 +176,10 @@
 
 
 * Introduction
-Global settlement is the most complex mechanism in =dss=. This is because it must alter the behaviour of almost every component of the system and it must perform under a variety of possible (under)collateralisation regimes. In particular, there are a number of key properties, such as dai and CDP parity, or the lack of race conditions, which should be guaranteed even in edge cases, e.g. in the presence of CDPs which have become less than 100% collateralised. This means that a relatively complex calculation must be performed to determine the correct rates for collateral redemption by dai and CDP owners: this calculation is likely done off-chain and relies on up-to-date price data. Since in some edge cases it will not be possible to satisfy all desirable properties at once, a choice must be made about which to prioritise.
+=`cage`= is the most complex mechanism in =dss=. This is because it must alter the behaviour of almost every component of the system and it must perform under a variety of possible (under)collateralisation regimes. In particular, there are a number of key properties, such as dai and CDP parity, or the lack of race conditions, which should be guaranteed even in edge cases, e.g. in the presence of CDPs which have become less than 100% collateralised. This means that a relatively complex calculation must be performed to determine the correct rates for collateral redemption by dai and CDP owners: this calculation is likely done off-chain and relies on up-to-date price data. Since in some edge cases it will not be possible to satisfy all desirable properties at once, a choice must be made about which to prioritise.
 
-The procedure for global settlement looks roughly as follows:
-1. The top-level =cage= method is called, which puts all system components into post-global settlement mode.
+The procedure for =cage= looks roughly as follows:
+1. The top-level =cage= method is called, which puts all system components into post-=cage= mode.
 2. If necessary, the surplus buffer of dai (or a fraction thereof) in the =Vow= is burned.
 3. For each collateral type, dai and CDP collateral redemption rates are calculated and fed into the system via the per-=Ilk= =cage= methods. In the simplest case they are just the price of each collateral type, however if the system is in a regime where there are undercollateralised CDPs, then adjustments must be made, requiring an off-chain calculation. A choice can be made between /CDP parity/ or /dai parity/.
 4. Any ongoing collateral auctions that have not yet raised the dai to cover their debt are blocked from finalising, and are reversed with =skip=, returning the collateral and debt to the original CDP.
@@ -230,7 +230,7 @@ We define a function for casting an =address= to a =bytes32=:
   }
 #+END_SRC
 
-The storage layout of the =End= is as follows:
+The contract that coordinates =cage= is called the =End=. The storage layout of the =End= is as follows:
 #+NAME: data
 #+BEGIN_SRC sol
   VatLike  public vat;
@@ -244,7 +244,7 @@ The storage layout of the =End= is as follows:
   mapping (bytes32 => mapping (bytes32 => uint256)) public bags;
 #+END_SRC
 
-=End= uses the same multiowner auth model as the other =dss= contracts:
+The =End= uses the same multiowner auth model as the other =dss= contracts:
 
 #+NAME: auth
 #+BEGIN_SRC sol
@@ -297,7 +297,7 @@ The target contracts of the =End= can be modified by owners in-flight:
       Can == 1
 #+END_SRC
 
-* The global settlement process
+* The =cage= process
 First, the top-level =cage= method is called, which sets the =live= flag to zero and initiates =cage= in the other relevant system modules:
 
 #+NAME: cage
@@ -558,7 +558,7 @@ We might also be able to set \( {\tt tag_i } \) and \( {\tt fix_i } \) so as to 
 
 which will ensure that \( \sum_i {\tt fix_i} \cdot p_{{\tt i}} = 1 \) due to the fundamental equation of dai.
 
-It remains to choose the \( {\tt tag_i} \) such that losses from undercollateralised CDPs of =Ilk= =i= are socialised across all CDPs of the =Ilk=. This means that we will only be able to guarantee parity in the case that each =Ilk= is on aggregate not undercollateralised. 
+It remains to choose the \( {\tt tag_i} \) such that losses from undercollateralised CDPs of =Ilk= =i= are socialised across all CDPs of the =Ilk=. This means that we will only be able to guarantee parity in the case that each =Ilk= is on aggregate not undercollateralised.
 
 When socialising proportionally to debt, e have to solve the following for \( {\tt tag_i} \):
 
@@ -583,12 +583,14 @@ set \( {\tt tag_i} = \frac{1}{p_i} \) and \( {\tt fix_i} \) according to formula
 in both cases, set =dump = 1= and \( {\tt fix_i} \) according to formula \ref{eq:fixdaiparity}.
 ****** by socialising proportionally to debt
 Set \( {\tt tag_i} \) according to formula \ref{eq:tagdaiparity-debt}.
-****** TODO by socialising proportionally to equity
-****** TODO by socialising proportionally to collateral
 
-**** TODO In the presence of an undercollateralised =Ilk=
+There are two additional redistribution methods that are not considered here:
+****** by socialising proportionally to equity
+****** by socialising proportionally to collateral
 
-A different calculation is necessary if there is an =Ilk= which is undercollateralised in aggregate, i.e. has \( {\tt Art_i} \cdot {\tt rate_i} \lt {\tt gap_i} \), and parity is desired. In that case, it is necessary to set the \( {\tt fix_i} \) in such a way as to socialise the losses from the undercollateralised =Ilk= across other collateral types. This calculation is TBA.
+**** In the presence of an undercollateralised =Ilk=
+
+A different calculation is necessary if there is an =Ilk= which is undercollateralised in aggregate, i.e. has \( {\tt Art_i} \cdot {\tt rate_i} \lt {\tt gap_i} \), and parity is desired. In that case, it is necessary to set the \( {\tt fix_i} \) in such a way as to socialise the losses from the undercollateralised =Ilk= across other collateral types. TODO: This calculation is TBA.
 
 ** CDP Settlement
 Once =tag_i= has been provided, individual CDPs can be processed with =skim=, settling the position at the price implied by =tag_i=. This method is public, and both CDP holders and dai holders are incentivised to call it: the former in order to withdraw their remaining collateral, and the latter in order to make collateral available for redemption.
@@ -867,10 +869,6 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
       Vice - rad
 #+END_SRC
 
-* TODO NFT Settlement Modules
-
-NFTs need to be dealt with separately, by assigning ownership of the tokens and their associated debt to a special settlement module.
-
 * Tests
 
 #+NAME: solidity-test-skeleton
@@ -1034,7 +1032,7 @@ The first basic test ensures that =end.cage(hump)= is able to run and sets the l
 
 ** Testing the case with no undercollateralised CDPs
 
-The next test simulates a basic global settlement scenario with one CDP which is not undercollateralised. We follow the computations for \( {\tt tag } \) and \( {\tt fix } \) that were proposed earlier. With only one collateral type and no system debt, they simplify to:
+The next test simulates a basic =cage= scenario with one CDP which is not undercollateralised. We follow the computations for \( {\tt tag } \) and \( {\tt fix } \) that were proposed earlier. With only one collateral type and no system debt, they simplify to:
 
 \[
 {\tt tag} = {\tt fix} = \frac{1}{p_i}
@@ -1329,7 +1327,7 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       gemA.join(urn1, 10 ether);
       vat.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
       // this urn has 0 gem, 10 ink, 15 tab, 15 dai
-      
+
       vat.file("gold", "spot", ray(1 ether)); // now unsafe
 
       uint id = cat.bite("gold", urn1);       // CDP liquidated
@@ -1386,3 +1384,19 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       assertEq(gold.balanceOf(address(gemA)), 0);
   }
 #+END_SRC
+
+* Further Work
+
+** Dai-parity by socialising proportionally to collateral
+
+Here, well-collateralised CDPs are effectively used to bail out undercollaterised positions. This mechanism is already in use in the current, single collateral, version of Dai.
+
+** Dai-parity by socialising proportionally to equity
+
+This would be a novel mechanism, similar to collateral-proportional, but instead considering the /equity/ of a CDP:
+
+\[ {\tt E_{iu}} = {\tt art_{iu}} \cdot {\tt rate_i} - p_{{\tt i}} \cdot {\tt ink_i} \]
+
+** NFT Settlement Modules (TODO)
+
+NFTs need to be dealt with separately, by assigning ownership of the tokens and their associated debt to a special settlement module.
