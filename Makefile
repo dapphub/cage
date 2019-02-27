@@ -3,32 +3,32 @@ ACT=act
 DOC=doc
 OUT=out
 
-CAGE=cage.org
+END=end.org
 
 DAPP=dapp
 
-all: $(SRC)/cage.sol $(ACT)/cage.act $(DOC)/cage.html
+all: $(SRC)/end.sol $(ACT)/end.act $(DOC)/end.html
 
-build: $(SRC)/cage.sol
+build: $(SRC)/end.sol
 	$(DAPP) build
 
-doc: $(DOC)/cage.html
+doc: $(DOC)/end.html
 
 test: build
 	$(DAPP) test
 
 clean:
-	rm -rf $(SRC) $(ACT) $(DOC)/cage.html $(OUT)
+	rm -rf $(SRC) $(ACT) $(DOC)/end.html $(OUT)
 
-$(SRC)/cage.sol: $(CAGE)
-	nix-shell --pure --command 'orgdapp-sol $(CAGE)'
+$(SRC)/end.sol: $(END)
+	nix-shell --pure --command 'orgdapp-sol $(END)'
 
-$(ACT)/cage.act: $(CAGE)
-	nix-shell --pure --command 'orgdapp-act $(CAGE)'
+$(ACT)/end.act: $(END)
+	nix-shell --pure --command 'orgdapp-act $(END)'
 
-$(DOC)/cage.html: $(CAGE)
-	nix-shell --pure --command 'orgdapp-doc $(CAGE)'
+$(DOC)/end.html: $(END)
+	nix-shell --pure --command 'orgdapp-doc $(END)'
 
 # don't build by default
-$(DOC)/theme.css: $(CAGE)
-	nix-shell --pure --command 'orgdapp-css $(CAGE)'
+$(DOC)/theme.css: $(END)
+	nix-shell --pure --command 'orgdapp-css $(END)'

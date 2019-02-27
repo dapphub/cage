@@ -23,8 +23,8 @@
 # End:
 
 #+NAME: solidity-skeleton
-#+BEGIN_SRC sol :tangle "src/cage.sol" :exports none
-  /// cage.sol -- global settlement engine
+#+BEGIN_SRC sol :tangle "src/end.sol" :exports none
+  /// end.sol -- global settlement engine
 
   // <<license>>
 
@@ -84,9 +84,6 @@
       function bids(uint id) public view returns (Bid memory);
       function yank(uint id) public;
   }
-  contract GemLike {
-      function push(bytes32,uint256) public;
-  }
 
   contract End {
 
@@ -130,7 +127,7 @@
 #+END_SRC
 
 #+NAME: act-skeleton
-#+BEGIN_SRC act :tangle "act/cage.act" :exports none
+#+BEGIN_SRC act :tangle "act/end.act" :exports none
    // <<license>>
 
    <<act-file>>
@@ -469,7 +466,7 @@ At this point, any outstanding `Flip` auctions that have not yet raised their ta
 
 #+NAME: act-skip
 #+BEGIN_SRC act
-
+  // TODO
 #+END_SRC
 
 For the purposes of the upcoming calculation, we will assume that all
@@ -872,8 +869,8 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
 * Tests
 
 #+NAME: solidity-test-skeleton
-#+BEGIN_SRC sol :tangle "src/cage.t.sol" :exports none
-  // cage.t.sol -- global settlement tests
+#+BEGIN_SRC sol :tangle "src/end.t.sol" :exports none
+  // end.t.sol -- global settlement tests
 
   // <<license>>
 
@@ -888,7 +885,7 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
   import {Flipper} from 'dss/flip.sol';
   import {GemJoin} from 'dss/join.sol';
   import {GemMove, DaiMove} from 'dss/move.sol';
-  import {End}  from './cage.sol';
+  import {End}  from './end.sol';
 
   contract EndTest is DSTest {
       Vat   vat;
