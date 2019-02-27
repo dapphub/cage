@@ -466,6 +466,9 @@ At this point, any outstanding `Flip` auctions that have not yet raised their ta
 
 #+NAME: act-skip
 #+BEGIN_SRC act
+  behaviour skip of End
+  interface skip(bytes32 ilk, uint256 id)
+
   // TODO
 #+END_SRC
 
