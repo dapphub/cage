@@ -47,25 +47,31 @@
       function dai(address) public view returns (uint);
       function ilks(bytes32 ilk) public returns (Ilk memory);
       function urns(bytes32 ilk, address urn) public returns (Urn memory);
+      function debt() public returns (uint);
       function move(address src, address dst, uint256 rad) public;
       function flux(bytes32 ilk, address src, address dst, uint256 rad) public;
       function tune(bytes32 i, address u, address v, address w, int256 dink, int256 dart) public;
       function grab(bytes32 i, address u, address v, address w, int256 dink, int256 dart) public;
-      function heal(address u, address v, int256 rad) public;
+      function heal(uint256 rad) public;
+      function suck(address u, address v, uint256 rad) public;
       function cage() public;
   }
   contract CatLike {
       struct Ilk {
           address flip;  // Liquidator
           uint256 chop;  // Liquidation Penalty   [ray]
-          uint256 lump;  // Liquidation Quantity  [wad]
+          uint256 lump;  // Liquidation Quantity  [rad]
       }
       function ilks(bytes32) public returns (Ilk memory);
       function cage() public;
   }
   contract VowLike {
-      function heal(uint256 wad) public;
-      function cage(uint256 dump) public;
+      function Joy() public view returns (uint);
+      function Awe() public view returns (uint);
+      function heal(uint256 rad) public;
+      function kiss(uint256 rad) public;
+      function cage() public;
+      function loot() public;
   }
   contract Flippy {
       struct Bid {
@@ -83,52 +89,69 @@
       function yank(uint id) public;
   }
 
-  contract End {
-
-      // --- Auth ---
-      <<auth>>
-
-      // --- Data ---
-      <<data>>
-
-      // --- Init ---
-      <<init>>
-
-      // --- Helpers ---
-      <<helper>>
-
-      // --- Math ---
-      <<math>>
-
-      // --- Administration ---
-      <<file>>
-
-      // --- Settlement ---
-      <<cage>>
-
-      <<cage-ilk>>
-
-      <<skip>>
-
-      <<skim>>
-
-      <<free>>
-
-      <<shop>>
-
-      <<pack>>
-
-      <<cash>>
-
-      <<vent>>
+  contract PipLike {
+      function read() public view returns (bytes32);
   }
+
+  contract Spotty {
+      struct Ilk {
+          PipLike pip;
+          uint256 mat;
+      }
+      function ilks(bytes32) public view returns (Ilk memory);
+  }
+
+
+    contract End {
+
+        // --- Auth ---
+        <<auth>>
+
+        // --- Data ---
+        <<data>>
+
+        // --- Init ---
+        <<init>>
+
+        // --- Math ---
+        <<math>>
+
+        // --- Administration ---
+        <<file-address>>
+        <<file-uint256>>
+
+        // --- Settlement ---
+        <<cage>>
+
+        <<cage-ilk>>
+
+        <<skip>>
+
+        <<skim>>
+
+        <<bail>>
+
+        <<free>>
+
+        <<thaw>>
+
+        <<flow>>
+
+        <<shop>>
+
+        <<pack>>
+
+        <<cash>>
+    }
 #+END_SRC
 
 #+NAME: act-skeleton
 #+BEGIN_SRC act :tangle "act/end.act" :exports none
    // <<license>>
 
-   <<act-file>>
+   <<act-file-address>>
+
+   <<act-file-uint256>>
 
    <<act-cage>>
 
@@ -138,15 +161,19 @@
 
    <<act-skim>>
 
+   <<act-bail>>
+
    <<act-free>>
+
+   <<act-thaw>>
+
+   <<act-flow>>
 
    <<act-shop>>
 
    <<act-pack>>
 
    <<act-cash>>
-
-   <<act-vent>>
 #+END_SRC
 
 * License
@@ -171,79 +198,70 @@
 
 
 * Introduction
-=`cage`= is the most complex mechanism in =dss=. This is because it must alter the behaviour of almost every component of the system and it must perform under a variety of possible (under)collateralisation regimes. In particular, there are a number of key properties, such as dai and CDP parity, or the lack of race conditions, which should be guaranteed even in edge cases, e.g. in the presence of CDPs which have become less than 100% collateralised. This means that a relatively complex calculation must be performed to determine the correct rates for collateral redemption by dai and CDP owners: this calculation is likely done off-chain and relies on up-to-date price data. Since in some edge cases it will not be possible to satisfy all desirable properties at once, a choice must be made about which to prioritise.
+=`cage`= is the most complex mechanism in =dss=. This is because it must alter the behaviour of almost every component of the system and it must perform under a variety of possible (under)collateralisation regimes. In particular, there are a number of key properties, such as dai and CDP parity, or the lack of race conditions, which should be guaranteed even in edge cases, e.g. in the presence of CDPs which have become less than 100% collateralised. This means that a relatively complex calculation must be performed to determine the correct rates for collateral redemption by dai and CDP owners. Since in some edge cases it will not be possible to satisfy all desirable properties at once, a choice must be made about which to prioritise.
 
 The procedure for =cage= looks roughly as follows:
-1. The top-level =cage= method is called, which puts all system components into post-=cage= mode.
-2. If necessary, the surplus buffer of dai (or a fraction thereof) in the =Vow= is burned.
-3. For each collateral type, dai and CDP collateral redemption rates are calculated and fed into the system via the per-=Ilk= =cage= methods. In the simplest case they are just the price of each collateral type, however if the system is in a regime where there are undercollateralised CDPs, then adjustments must be made, requiring an off-chain calculation. A choice can be made between /CDP parity/ or /dai parity/.
-4. Any ongoing collateral auctions that have not yet raised the dai to cover their debt are blocked from finalising, and are reversed with =skip=, returning the collateral and debt to the original CDP.
-5. CDP owners can now redeem the collateral from their settled positions with =skim=.
-6. dai holders can redeem the collateral they are entitled to by going through =shop=, =pack=, and =cash=.
+1. Beforehand, the =End= contract is configured with the addresses of the =Vat=, =Vow=, =Cat=, and the price feed coordinator =Spot=. A suitable cooldown period =wait= is chosen. An appropriate entity which will be allowed to initiate global settlement is added as an owner of the =End=.
+2. When the time comes to globally settle the system, the top-level =cage= method is called by an authorised party, which puts all system components into post-=cage= mode, and starts the cooldown timer. All subsequent steps are completely permissionless and can be triggered by anyone.
+3. For each collateral type, the per-=Ilk= =cage= method is called. This fetches the feed price from the =spot= to set the =tags=, which are the prices at which all CDPs of that collateral type will be settled.
+4. CDPs that are not undercollateralised can immediately be settled with =skim=, and the collateral can be withdrawn by their owner with =free=.
+5. Any CDPs which are _undercollateralised_, i.e. whose debt is greater in value than their collateral as judged by the =tag=, are settled by calling =bail=.
+6. Any ongoing collateral auctions that have not yet raised the dai to cover their debt are blocked from finalising, and are reversed by calling =skip=, returning the collateral and debt to the original CDP.
+7. Once the cooldown timer has finished, =thaw= and =flow= are called to fix the dai redemption rates, called =fixs=. It is assumed that all undercollateralised positions have been =bail=ed by this point, and all deficit auctions have been =skip=ped, i.e. we assume that during the cooldown period steps 5 and 6 were completed.
+8. dai holders can redeem the collateral they are entitled to by going through =shop=, =pack=, and =cash=.
 
 * Setup
-We will require safe addition, subtraction, and multiplication, =ray= fixed-point multiplication, safe =int= casting, and =min=:
+We will require safe addition, subtraction, and multiplication, =Ray= fixed-point multiplication and division, and =min=:
 #+NAME: math
 #+BEGIN_SRC sol
   function add(uint x, uint y) internal pure returns (uint z) {
       z = x + y;
       require(z >= x);
   }
-  function sub(uint x, uint y) internal pure returns (int z) {
-      z = int(x - y);
-      require(x < y || z >= 0);
-      require(x > y || z <= 0);
+  function sub(uint x, uint y) internal pure returns (uint z) {
+      require((z = x - y) <= x);
   }
   function mul(uint x, uint y) internal pure returns (uint z) {
-      z = x * y;
-      require(y == 0 || z / y == x);
+      require(y == 0 || (z = x * y) / y == x);
   }
-
   uint constant RAY = 10 ** 27;
   function rmul(uint x, uint y) internal pure returns (uint z) {
-      z = x * y;
-      require(y == 0 || z / y == x);
-      z = z / RAY;
+      z = mul(x, y) / RAY;
   }
-  function u2i(uint x) internal pure returns (int y) {
-      y = int(x);
-      require(y >= 0);
+  function rdiv(uint x, uint y) internal pure returns (uint z) {
+      z = mul(x, RAY) / y;
   }
   function min(uint x, uint y) internal pure returns (uint z) {
       if (x > y) { z = y; } else { z = x; }
   }
-  function min(int x, int y) internal pure returns (int z) {
-      if (x > y) { z = y; } else { z = x; }
-  }
 #+END_SRC
 
-We define a function for casting an =address= to a =bytes32=:
-#+NAME: helper
-#+BEGIN_SRC sol
-  // function b32(address a) internal pure returns (bytes32 b) {
-  //     b = bytes32(bytes20(a));
-  // }
-#+END_SRC
-
-The contract that coordinates =cage= is called the =End=. The storage layout of the =End= is as follows:
+The contract that coordinates global settlement is called the =End=. The storage layout of the =End= is as follows:
 #+NAME: data
 #+BEGIN_SRC sol
+  mapping (address => uint) public wards;
+
   VatLike  public vat;
   CatLike  public cat;
   VowLike  public vow;
+  Spotty   public spot;
+
   uint256  public live;
+  uint256  public wait;
+  uint256  public when;
+  uint256  public debt;
 
   mapping (address => uint256)                      public dai;
   mapping (bytes32 => uint256)                      public tags;
+  mapping (bytes32 => uint256)                      public gaps;
   mapping (bytes32 => uint256)                      public fixs;
+  mapping (bytes32 => uint256)                      public arts;
   mapping (bytes32 => mapping (address => uint256)) public bags;
 #+END_SRC
 
 The =End= uses the same multiowner auth model as the other =dss= contracts:
-
 #+NAME: auth
 #+BEGIN_SRC sol
-  mapping (address => uint) public wards;
   function rely(address guy) public auth { wards[guy] = 1; }
   function deny(address guy) public auth { wards[guy] = 0; }
   modifier auth { require(wards[msg.sender] == 1); _; }
@@ -259,17 +277,17 @@ The constructor simply sets the creating account as owner and marks the system a
 #+END_SRC
 
 The target contracts of the =End= can be modified by owners in-flight:
-
-#+NAME: file
+#+NAME: file-address
 #+BEGIN_SRC sol
   function file(bytes32 what, address data) public auth {
       if (what == "vat") vat = VatLike(data);
       if (what == "cat") cat = CatLike(data);
       if (what == "vow") vow = VowLike(data);
+      if (what == "spot") spot = Spotty(data);
   }
 #+END_SRC
 
-#+NAME: act-file
+#+NAME: act-file-address
 #+BEGIN_SRC act
   behaviour file of End
   interface file(bytes32 what, address data)
@@ -279,6 +297,7 @@ The target contracts of the =End= can be modified by owners in-flight:
       Vat_was  : address
       Cat_was  : address
       Vow_was  : address
+      Spot_was : address
 
   storage
 
@@ -286,28 +305,43 @@ The target contracts of the =End= can be modified by owners in-flight:
       Vat  |-> Vat_was => #if what == #string2Word("vat")  #then data else Vat_was
       Cat  |-> Cat_was => #if what == #string2Word("cat")  #then data else Cat_was
       Vow  |-> Vow_was => #if what == #string2Word("vow")  #then data else Vow_was
+      Spot  |-> Spot_was => #if what == #string2Word("spot")  #then data else Spot_was
 
   iff
 
       Can == 1
 #+END_SRC
 
+The cooldown period can also be configured:
+#+NAME: file-uint256
+#+BEGIN_SRC sol
+  function file(bytes32 what, uint256 data) public auth {
+      if (what == "wait") wait = data;
+  }
+#+END_SRC
+
+#+NAME: act-file-uint256
+#+BEGIN_SRC act :exports none
+  // TODO
+#+END_SRC
+
 * The =cage= process
 First, the top-level =cage= method is called, which sets the =live= flag to zero and initiates =cage= in the other relevant system modules:
-
 #+NAME: cage
 #+BEGIN_SRC sol
-  function cage(uint256 dump) public auth {
+  function cage() public auth {
       require(live == 1);
       live = 0;
+      when = now;
       vat.cage();
       cat.cage();
-      vow.cage(dump);
+      vow.cage();
   }
 #+END_SRC
 
 #+NAME: act-cage
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour cage of End
   interface cage(uint256 dump)
 
@@ -391,22 +425,21 @@ First, the top-level =cage= method is called, which sets the =live= flag to zero
       Can_vat_vow == 1
 #+END_SRC
 
-The /=hump= burn ratio/, here called =dump=, is a parameter that determines what fraction of the =Vow='s dai buffer is to be burned: =0= if none of it, and =WAD= if all of it.
-
-Next, the per-=Ilk= =cage= method is called, supplying two rates, called =tag= and =fix=, once for each collateral type.
+Next, the per-=Ilk= =cage= method is called, which fetches the collateral price from the `spot` and sets the global settlement flag in the collateral auction contract:
 
 #+NAME: cage-ilk
 #+BEGIN_SRC sol
-  function cage(bytes32 ilk, uint256 tag, uint256 fix) public auth {
+  function cage(bytes32 ilk) public auth {
       require(live == 0);
-      tags[ilk] = tag;
-      fixs[ilk] = fix;
+      require(tags[ilk] == 0);
+      tags[ilk] = rdiv(RAY, uint(spot.ilks(ilk).pip.read()));
       Flippy(cat.ilks(ilk).flip).cage();
   }
 #+END_SRC
 
 #+NAME: act-cage-ilk
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour cage-ilk of End
   interface cage(bytes32 ilk, uint256 tag, uint256 fix)
 
@@ -440,8 +473,7 @@ Next, the per-=Ilk= =cage= method is called, supplying two rates, called =tag= a
       Can_flip == 1
 #+END_SRC
 
-At this point, any outstanding `Flip` auctions that have not yet raised their target amount of dai can be cancelled ("yanked") by calling the public method =skip(uint id)=. When an auction is yanked, the collateral and debt are assigned back to the original CDP, which will then be settled as if it had not yet been liquidated, and the highest bidder is refunded their dai. Auctions that have already raised their target amount of dai are allowed to proceed as normal and can receive further =dent= bids.
-
+At this point, any outstanding `Flip` auctions that have not yet raised their target amount of dai can be cancelled ("yanked") by calling the public method =skip(uint id)=. When an auction is yanked, the collateral and debt are assigned back to the original CDP, which will then be settled as if it had not yet been liquidated, and the highest bidder is refunded their dai. Auctions that have already raised their target amount of dai are allowed to proceed and can receive further =dent= bids and settle as normal.
 #+NAME: skip
 #+BEGIN_SRC sol
   function skip(bytes32 ilk, uint256 id) public {
@@ -452,44 +484,46 @@ At this point, any outstanding `Flip` auctions that have not yet raised their ta
       Flippy.Bid  memory bid = Flippy(flip).bids(id);
 
       Flippy(flip).yank(id);
-
-      vat.heal(address(vow), address(vow), min(0, sub(vat.sin(address(vow)), bid.tab)));
+      vat.suck(address(vow), address(vow), bid.tab);
       vat.grab(ilk, bid.urn, address(this), address(vow), int(bid.lot), int(bid.tab / i.rate));
   }
 #+END_SRC
 
 #+NAME: act-skip
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
   behaviour skip of End
   interface skip(bytes32 ilk, uint256 id)
 
   // TODO
 #+END_SRC
 
-For the purposes of the upcoming calculation, we will assume that all
-yankable auctions have been yanked. In particular by the /adjusted dai supply/, denoted by \( {\tt debt}^\prime \), we will mean the predicted value of the total dai supply once all outstanding auctions have finalised, which requires no further assumptions since all auctions remaining at this point have raised their target amounts of dai. In other words, we can assume without any loss of generality that no collateral auctions will finish in deficit.
+For the purposes of the upcoming calculation, we will assume that all yankable auctions have been yanked. In particular, when the cooldown period has elapsed and =flow= is executed, we will assume that the outstanding =Art= for each =Ilk= has been updated to include all CDPs that were previously in liquidation that had not yet raised enough dai to cover their debt.
 
 ** Interlude: the =fix= computation
 
-The =fix= represents the quantity of =gem= that a user will be able to redeem for one dai. We now describe the procedure by which it should be computed, presumably by an off-chain agent. In the following calculation, for notational simplicity, the appropriate operations for fixed point units are implicit, e.g. \( {\tt hump} \cdot {\tt dump} \) is the number of dai from the =hump= that will be burned, \( {\tt art_{iu}} \cdot {\tt rate_i} \) is the outstanding dai debt of CDP =u=, etc.
+The =fix= represents the quantity of =gem= that a user will be able to redeem for one dai. We now describe the procedure by which it should be computed. In the following calculation, for notational simplicity, the appropriate operations for fixed point units are implicit, e.g. \( {\tt art_{iu}} \cdot {\tt rate_i} \) is the outstanding dai debt of CDP =u=, etc.
 
-In this case, the total quantity of dai that must be redeemable through =End= is the adjusted dai supply \( {\tt debt}^\prime \) minus the amount from the =hump= that was burned during =Vow.cage(dump)=, i.e.:
+In this case, the total quantity of dai that must be redeemable through =End= is the dai supply once all dai surplus in the =Vow= has been removed. We will denote this quantity by \( debt^\prime \).
 
-\[
-{\tt debt}^\prime - {\tt hump \cdot dump}
-\]
-
-The first priority is to ensure that there is no race condition. That is to say, that with the \( {\tt fix_i}\) and \({\tt tag_i} \) that we chosen, every dai holder will be able to redeem the same quantity of =gem=, regardless of when they interact with the =End=, i.e.:
+The first priority is to ensure that there is no race condition. That is to say, that with the \( {\tt fix_i}\) and \({\tt tag_i} \) that we chosen, every dai holder will be able to redeem the same quantity of =gem=, regardless of when they interact with the =End=. Let \( {\tt war_{iu}} \) denote the amount of collateral of type =i= taken from the urn =u= that will go to dai redemption. Then this property can be expressed as:
 
 \[
-\sum_u {\tt war_{iu}} = {\tt fix_i} \cdot ({\tt debt}^\prime - {\tt hump \cdot dump })
+\sum_u {\tt war_{iu}} = {\tt fix_i} \cdot {\tt debt}^\prime
 \]
 
-We shall call this the /no-race property/. Setting \( {\tt war_{iu}} \) to be \( \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i }) \), where \( {\tt tag_i} \) is some /CDP settlement rate/, to be determined, we can solve for \( {\tt fix_i } \):
+We shall call this the /no-race property/. Setting \( {\tt war_{iu}} \) to be \( \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i }) \), where \( {\tt tag_i} \) is the /CDP settlement rate/, we can solve for \( {\tt fix_i } \):
 
 \[
-{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt}^\prime - {\tt hump \cdot dump }}
+{\tt fix_i} = \frac{\sum_u \mathrm{min}({\tt ink_{iu}}, {\tt art_{iu}} \cdot {\tt rate_i} \cdot {\tt tag_i })}{{\tt debt}^\prime}
 \]
+
+Similarly, it is desirable for CDPs to be settled at the market value of their collateral, i.e. that:
+
+\[
+{\tt tag_i } = \frac{1}{p_i}
+\]
+
+We call this the /CDP parity property/.
 
 Another desirable feature is for all =gem= redeemable for one dai to be worth one dollar:
 
@@ -497,13 +531,7 @@ Another desirable feature is for all =gem= redeemable for one dai to be worth on
 \sum_i {\tt fix_i} \cdot p_{{\tt i}} = 1
 \]
 
-We call this the /dai parity property/. Similarly, it is desirable for CDPs to be settled at the market value of their collateral, i.e. that:
-
-\[
-{\tt tag_i } = \frac{1}{p_i}
-\]
-
-We call this the /CDP parity property/.
+We call this the /dai parity property/. As we shall see, it might not be satisfied if the system is in deficit.
 
 **** In the absence of undercollateralised positions
 
@@ -596,14 +624,18 @@ Once =tag_i= has been provided, individual CDPs can be processed with =skim=, se
       VatLike.Ilk memory i = vat.ilks(ilk);
       VatLike.Urn memory u = vat.urns(ilk, urn);
 
-      uint war = min(u.ink, rmul(rmul(u.art, i.rate), tags[ilk]));
+      uint war = rmul(rmul(u.art, i.rate), tags[ilk]);
+      // redundant check:
+      require(u.ink >= war);
+      arts[ilk] = add(arts[ilk], u.art);
 
-      vat.grab(ilk, urn, address(this), address(this), -int(war), -int(u.art));
+      vat.grab(ilk, urn, address(this), address(vow), -int(war), -int(u.art));
   }
 #+END_SRC
 
 #+NAME: act-skim
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour skim of End
   interface skim(bytes32 ilk, bytes32 urn)
 
@@ -652,6 +684,32 @@ Once =tag_i= has been provided, individual CDPs can be processed with =skim=, se
       Can == 1
 #+END_SRC
 
+For undercollateralised CDP, we must instead call =bail=:
+
+#+NAME: bail
+#+BEGIN_SRC sol
+  function bail(bytes32 ilk, address urn) public {
+      require(tags[ilk] != 0);
+
+      VatLike.Ilk memory i = vat.ilks(ilk);
+      VatLike.Urn memory u = vat.urns(ilk, urn);
+
+      uint war = rmul(rmul(u.art, i.rate), tags[ilk]);
+
+      // redundant check:
+      require(u.ink < war);
+      arts[ilk] = add(arts[ilk], u.art);
+      gaps[ilk] = add(gaps[ilk], sub(war, u.ink));
+
+      vat.grab(ilk, urn, address(this), address(vow), -int(u.ink), -int(u.art));
+  }
+#+END_SRC
+
+#+NAME: act-bail
+#+BEGIN_SRC act :exports none
+  // TODO
+#+END_SRC
+
 Since =frob= is now frozen, we also provide a method for CDP holder to remove their collateral from a settled =urn=, after =skim= has been called:
 
 #+NAME: free
@@ -659,12 +717,13 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
   function free(bytes32 ilk) public {
       VatLike.Urn memory u = vat.urns(ilk, msg.sender);
       require(u.art == 0);
-      vat.grab(ilk, msg.sender, msg.sender, msg.sender, -int(u.ink), 0);
+      vat.grab(ilk, msg.sender, msg.sender, address(vow), -int(u.ink), 0);
   }
 #+END_SRC
 
 #+NAME: act-free
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour free of End
   interface free(bytes32 ilk)
 
@@ -696,6 +755,39 @@ Since =frob= is now frozen, we also provide a method for CDP holder to remove th
       Art == 0
 #+END_SRC
 
+** Post cooldown processing
+#+NAME: thaw
+#+BEGIN_SRC sol
+  function thaw() public {
+      require(now >= when + wait);
+      require(debt == 0);
+      require(vow.Joy() == 0);
+      debt = vat.debt();
+  }
+#+END_SRC
+
+#+NAME: act-thaw
+#+BEGIN_SRC act :exports none
+  // TODO
+#+END_SRC
+
+#+NAME: flow
+#+BEGIN_SRC sol
+  function flow(bytes32 ilk) public {
+      require(debt != 0);
+      require(fixs[ilk] == 0);
+
+      VatLike.Ilk memory i = vat.ilks(ilk);
+      uint256 wad = rmul(rmul(add(i.Art, arts[ilk]), i.rate), tags[ilk]);
+      fixs[ilk] = rdiv(mul(sub(wad, gaps[ilk]), RAY), debt);
+  }
+#+END_SRC
+
+#+NAME: act-flow
+#+BEGIN_SRC act :exports none
+  // TODO
+#+END_SRC
+
 ** Redemption
 
 A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way process. At this point, the =sin= incurred by the =End= during =skim= is cancelled.
@@ -703,13 +795,16 @@ A dai holder may exchange their =Vat= dai for =End= dai, which is a one-way proc
 #+NAME: shop
 #+BEGIN_SRC sol
   function shop(uint256 wad) public {
-      vat.heal(address(this), msg.sender, int(mul(wad, RAY)));
+      require(debt != 0);
+      vat.move(msg.sender, address(vow), mul(wad, RAY));
+      vow.heal(mul(wad, RAY));
       dai[msg.sender] = add(dai[msg.sender], wad);
   }
 #+END_SRC
 
 #+NAME: act-shop
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour shop of End
   interface shop(uint256 wad)
 
@@ -747,12 +842,13 @@ For every =Ilk= that they wish to claim, the dai holder calls =pack=, receiving 
 #+BEGIN_SRC sol
   function pack(bytes32 ilk) public {
       require(bags[ilk][msg.sender] == 0);
-      bags[ilk][msg.sender] = add(bags[ilk][msg.sender], dai[msg.sender]);
+      bags[ilk][msg.sender] = dai[msg.sender];
   }
 #+END_SRC
 
 #+NAME: act-pack
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour pack of End
   interface pack(bytes32 ilk)
 
@@ -776,6 +872,7 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 #+NAME: cash
 #+BEGIN_SRC sol
   function cash(bytes32 ilk) public {
+      require(fixs[ilk] != 0);
       vat.flux(ilk, address(this), msg.sender, rmul(bags[ilk][msg.sender], fixs[ilk]));
       bags[ilk][msg.sender]  = 0;
       dai[msg.sender]        = 0;
@@ -783,7 +880,8 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
 #+END_SRC
 
 #+NAME: act-cash
-#+BEGIN_SRC act
+#+BEGIN_SRC act :exports none
+  // TODO update
   behaviour cash of End
   interface cash(bytes32 ilk)
 
@@ -815,53 +913,6 @@ Finally, they may withdraw every =gem= at a rate of \( {\tt fix_i} \) units for 
       Can == 1
 #+END_SRC
 
-Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account for it:
-
-#+NAME: vent
-#+BEGIN_SRC sol
-  function vent(uint256 rad) public {
-      vat.heal(address(this), address(this), u2i(rad));
-  }
-#+END_SRC
-
-#+NAME: act-vent
-#+BEGIN_SRC act
-  behaviour vent of End
-  interface vent(uint256 rad)
-
-  types
-
-      Vat  : address VatLike
-      Can  : uint256
-      Dai  : uint256
-      Sin  : uint256
-      Debt : uint256
-      Vice : uint256
-
-  storage
-
-      vat |-> Vat
-
-  storage Vat
-
-      Can[ACCT_ID] |-> Can
-      dai[ACCT_ID] |-> Dai  => Dai  - rad
-      sin[ACCT_ID] |-> Sin  => Sin  - rad
-      debt         |-> Debt => Debt - rad
-      vice         |-> Vice => Vice - rad
-
-  iff
-
-      Can == 1
-
-  iff in range uint256
-
-      Dai  - rad
-      Sin  - rad
-      Debt - rad
-      Vice - rad
-#+END_SRC
-
 * Tests
 
 #+NAME: solidity-test-skeleton
@@ -874,17 +925,43 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
 
   import "ds-test/test.sol";
   import "ds-token/token.sol";
+  import "ds-value/value.sol";
 
   import {Vat}  from 'dss/vat.sol';
   import {Cat}  from 'dss/cat.sol';
   import {Vow}  from 'dss/vow.sol';
   import {Flipper} from 'dss/flip.sol';
+  import {Flapper} from 'dss/flap.sol';
+  import {Flopper} from 'dss/flop.sol';
   import {GemJoin} from 'dss/join.sol';
   import {End}  from './end.sol';
+
+  contract Hevm {
+      function warp(uint256) public;
+  }
+
+  contract PipLike {
+      function read() public returns (bytes32);
+      function poke(bytes32 val) public;
+  }
+
+  contract TestSpot {
+      struct Ilk {
+          address pip;
+          uint256 mat;
+      }
+      mapping (bytes32 => Ilk) public ilks;
+
+      function file(bytes32 ilk, address pip_) public {
+          ilks[ilk].pip = pip_;
+      }
+  }
 
   <<test-usr>>
 
   contract EndTest is DSTest {
+      Hevm hevm;
+
       Vat   vat;
       End   end;
       Vow   vow;
@@ -892,9 +969,14 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
 
       DSToken gold;
 
+      PipLike pip;
+      TestSpot spot;
+
       GemJoin gemA;
 
       Flipper flip;
+      Flapper flap;
+      Flopper flop;
 
       <<test-helper>>
 
@@ -902,13 +984,26 @@ Irredeemable dai ends up in the =End= due to =dump=. =vent= is there to account 
 
       <<test-cage-basic>>
 
+      // -- Scenario where there is one well-collateralised CDP
+      // -- and there is no Vow deficit or surplus
       <<test-cage-collateralised>>
 
-      <<test-cage-undercollateralised-cdp-parity>>
+      // -- Scenario where there is one well-collateralised and one
+      // -- under-collateralised CDP, and no Vow deficit or surplus
+      <<test-cage-undercollateralised>>
 
-      <<test-cage-undercollateralised-dai-parity-debt>>
-
+      // -- Scenario where there is one collateralised CDP
+      // -- undergoing auction at the time of cage
       <<test-cage-skip>>
+
+      // -- Scenario where there is one well-collateralised CDP
+      // -- and there is a deficit in the Vow
+      <<test-cage-collateralised-deficit>>
+
+      // -- Scenario where there is one well-collateralised CDP
+      // -- and one under-collateralised CDP and there is a
+      // -- surplus in the Vow
+      <<test-cage-undercollateralised-surplus>>
   }
 #+END_SRC
 
@@ -949,8 +1044,8 @@ A helper contract that represents a user:
       function free(bytes32 ilk) public {
           end.free(ilk);
       }
-      function shop(uint256 wad) public {
-          end.shop(wad);
+      function shop(uint256 rad) public {
+          end.shop(rad);
       }
       function pack(bytes32 ilk) public {
           end.pack(ilk);
@@ -965,34 +1060,37 @@ Some helper functions for the test contract:
 
 #+NAME: test-helper
 #+BEGIN_SRC sol
-  uint constant WAD = 10 ** 18;
-  uint constant RAY = 10 ** 27;
+    uint constant WAD = 10 ** 18;
+    uint constant RAY = 10 ** 27;
 
-  function ray(uint wad) internal pure returns (uint) {
-      return wad * 10 ** 9;
-  }
-  function rad(uint wad) internal pure returns (uint) {
-      return wad * RAY;
-  }
-  function rmul(uint x, uint y) internal pure returns (uint z) {
-      z = x * y;
-      require(y == 0 || z / y == x);
-      z = z / RAY;
-  }
-  function dai(address urn) internal view returns (uint) {
-      return vat.dai(urn) / RAY;
-  }
-  function gem(bytes32 ilk, address urn) internal view returns (uint) {
-      return vat.gem(ilk, urn);
-  }
-  function ink(bytes32 ilk, address urn) internal view returns (uint) {
-      (uint ink_, uint art_) = vat.urns(ilk, urn); art_;
-      return ink_;
-  }
-  function art(bytes32 ilk, address urn) internal view returns (uint) {
-      (uint ink_, uint art_) = vat.urns(ilk, urn); ink_;
-      return art_;
-  }
+    function ray(uint wad) internal pure returns (uint) {
+        return wad * 10 ** 9;
+    }
+    function rad(uint wad) internal pure returns (uint) {
+        return wad * RAY;
+    }
+    function rmul(uint x, uint y) internal pure returns (uint z) {
+        z = x * y;
+        require(y == 0 || z / y == x);
+        z = z / RAY;
+    }
+    function min(uint x, uint y) internal pure returns (uint z) {
+        (x >= y) ? z = y : z = x;
+    }
+    function dai(address urn) internal view returns (uint) {
+        return vat.dai(urn) / RAY;
+    }
+    function gem(bytes32 ilk, address urn) internal view returns (uint) {
+        return vat.gem(ilk, urn);
+    }
+    function ink(bytes32 ilk, address urn) internal view returns (uint) {
+        (uint ink_, uint art_) = vat.urns(ilk, urn); art_;
+        return ink_;
+    }
+    function art(bytes32 ilk, address urn) internal view returns (uint) {
+        (uint ink_, uint art_) = vat.urns(ilk, urn); ink_;
+        return art_;
+    }
 #+END_SRC
 
 We deploy the necessary components of the system for testing:
@@ -1000,11 +1098,17 @@ We deploy the necessary components of the system for testing:
 #+NAME: test-setUp
 #+BEGIN_SRC sol
   function setUp() public {
-      vat = new Vat();
+      hevm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+      hevm.warp(0);
 
-      vow = new Vow();
-      vow.file("vat", address(vat));
-      vat.rely(address(vow));
+      vat = new Vat();
+      DSToken gov = new DSToken('GOV');
+
+      flap = new Flapper(address(vat), address(gov));
+      flop = new Flopper(address(vat), address(gov));
+      gov.setOwner(address(flop));
+
+      vow = new Vow(address(vat), address(flap), address(flop));
 
       cat = new Cat(address(vat));
       cat.file("vow", address(vow));
@@ -1013,6 +1117,12 @@ We deploy the necessary components of the system for testing:
 
       gold = new DSToken("GEM");
       gold.mint(20 ether);
+
+      pip = PipLike(address(new DSValue()));
+      spot = new TestSpot();
+      spot.file("gold", address(pip));
+      // initial collateral price of 5
+      pip.poke(bytes32(5 * RAY));
 
       vat.init("gold");
       gemA = new GemJoin(address(vat), "gold", address(gold));
@@ -1037,11 +1147,16 @@ We deploy the necessary components of the system for testing:
       end.file("vat", address(vat));
       end.file("cat", address(cat));
       end.file("vow", address(vow));
+      end.file("spot", address(spot));
+      end.file("wait", 1 hours);
       vat.rely(address(end));
       vow.rely(address(end));
       cat.rely(address(end));
       flip.rely(address(end));
+      flap.rely(address(vow));
+      flop.rely(address(vow));
   }
+
 #+END_SRC
 
 The first basic test ensures that =end.cage(hump)= is able to run and sets the liveness flags correctly:
@@ -1052,10 +1167,16 @@ The first basic test ensures that =end.cage(hump)= is able to run and sets the l
       assertEq(end.live(), 1);
       assertEq(vat.live(), 1);
       assertEq(cat.live(), 1);
-      end.cage(0);
+      assertEq(vow.live(), 1);
+      assertEq(vow.flopper().live(), 1);
+      assertEq(vow.flapper().live(), 1);
+      end.cage();
       assertEq(end.live(), 0);
       assertEq(vat.live(), 0);
       assertEq(cat.live(), 0);
+      assertEq(vow.live(), 0);
+      assertEq(vow.flopper().live(), 0);
+      assertEq(vow.flapper().live(), 0);
   }
 #+END_SRC
 
@@ -1084,18 +1205,16 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       assertEq(vat.debt(), rad(15 ether));
       assertEq(vat.vice(), 0);
 
-      // tag and fix computation
-      uint hump = 0;
-      uint tag = RAY / 5;
-      uint fix = RAY / 5;
-      end.cage(hump);
-      end.cage("gold", tag, fix);
+      // collateral price is 5
+      pip.poke(bytes32(5 * RAY));
+      end.cage();
+      end.cage("gold");
       end.skim("gold", urn1);
 
       // local checks:
       assertEq(art("gold", urn1), 0);
       assertEq(ink("gold", urn1), 7 ether);
-      assertEq(vat.sin(address(end)), rad(15 ether));
+      assertEq(vat.sin(address(vow)), rad(15 ether));
 
       // global checks:
       assertEq(vat.debt(), rad(15 ether));
@@ -1107,11 +1226,16 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       assertEq(gem("gold", urn1), 7 ether);
       ali.exit(address(this), 7 ether);
 
+      hevm.warp(1 hours);
+      end.thaw();
+      end.flow("gold");
+      assertTrue(end.fixs("gold") != 0);
+
       // dai redemption
+      ali.hope(address(end));
       ali.shop(15 ether);
 
       // global checks:
-      // no need for vent
       assertEq(vat.debt(), 0);
       assertEq(vat.vice(), 0);
 
@@ -1126,6 +1250,7 @@ We assume that the price of ="gold"= is now 5 dai, so \( {\tt tag} \) and \( {\t
       assertEq(gem("gold", address(end)), 0);
       assertEq(gold.balanceOf(address(gemA)), 0);
   }
+
 #+END_SRC
 
 ** Testing the case with CDP parity
@@ -1136,9 +1261,9 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
 {\tt fix} = \frac{17}{36} = 0.472 \ldots
 \]
 
-#+NAME: test-cage-undercollateralised-cdp-parity
+#+NAME: test-cage-undercollateralised
 #+BEGIN_SRC sol
-  function test_cage_undercollateralised_cdp_parity() public {
+  function test_cage_undercollateralised() public {
       Usr ali = new Usr(vat, end, gemA);
       Usr bob = new Usr(vat, end, gemA);
 
@@ -1152,29 +1277,26 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       address urn2 = address(bob);
       gemA.join(urn2, 1 ether);
       bob.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
-      // this urn has 0 gem, 1 ink, 3 tab, 3 dai
+      // bob's urn has 0 gem, 1 ink, 3 tab, 3 dai
 
       // global checks:
       assertEq(vat.debt(), rad(18 ether));
       assertEq(vat.vice(), 0);
 
-      // tag and fix computation
-      uint hump = 0;
-      // CDP holders settled at price of 2
-      uint tag = RAY / 2;
-      // DAI holders get ~0.944
-      uint fix = (17 * RAY) / 36;
-      end.cage(hump);
-      end.cage("gold", tag, fix);
+      // collateral price is 2
+      pip.poke(bytes32(2 * RAY));
+      end.cage();
+      end.cage("gold");
       end.skim("gold", urn1);
-      end.skim("gold", urn2);
+      // undercollateralised CDP is bailed
+      end.bail("gold", urn2);
 
       // local checks
       assertEq(art("gold", urn1), 0);
       assertEq(ink("gold", urn1), 2.5 ether);
       assertEq(art("gold", urn2), 0);
       assertEq(ink("gold", urn2), 0);
-      assertEq(vat.sin(address(end)), rad(18 ether));
+      assertEq(vat.sin(address(vow)), rad(18 ether));
 
       // global checks
       assertEq(vat.debt(), rad(18 ether));
@@ -1186,7 +1308,13 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       assertEq(gem("gold", urn1), 2.5 ether);
       ali.exit(address(this), 2.5 ether);
 
+      hevm.warp(1 hours);
+      end.thaw();
+      end.flow("gold");
+      assertTrue(end.fixs("gold") != 0);
+
       // first dai redemption
+      ali.hope(address(end));
       ali.shop(15 ether);
 
       // global checks:
@@ -1198,10 +1326,12 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
 
       // local checks:
       assertEq(dai(urn1), 0);
+      uint256 fix = end.fixs("gold");
       assertEq(gem("gold", urn1), rmul(fix, 15 ether));
       ali.exit(address(this), rmul(fix, 15 ether));
 
       // second dai redemption
+      bob.hope(address(end));
       bob.shop(3 ether);
 
       // global checks:
@@ -1220,137 +1350,12 @@ We test the case where there are two CDPs, one of the CDP is undercollateralised
       assertEq(gem("gold", address(end)), 1);
       assertEq(gold.balanceOf(address(gemA)), 1);
   }
+
 #+END_SRC
 
-** Testing the case with dai parity
+** Testing =skip=
 
 We now test the case when there are two CDPs, one of which is undercollateralised, but such that the =Ilk= as a whole is well collateralised.
-
-*** socialising proportionally to debt
-
-Here's a simple way we can compute the (exact) numerical solution using a bisection method:
-
-#+BEGIN_SRC python :results output
-  WAD = 10**18
-  RAY = 10**27
-
-  def rmul(x, y):
-      return (x * y) // RAY
-
-  def solve_by_bisection(f, toe, hat, tol=1, tries=1000):
-      for _ in range(tries):
-          cut = (toe + hat) // 2
-          if f(cut) > tol:
-              hat = cut
-          elif f(cut) < -tol:
-              toe = cut
-          else:
-              return cut
-
-  Art  = 18 * WAD
-  rate = RAY
-  p    = 2
-
-  inks = [10 * WAD, 1 * WAD]
-  arts = [15 * WAD, 3 * WAD]
-
-  f = lambda tag: p * sum([min(ink, rmul(rmul(art, rate), tag)) for ink, art in zip(inks, arts)]) - rmul(Art, rate)
-
-  print(solve_by_bisection(f, 0, RAY))
-#+END_SRC
-
-#+RESULTS:
-: 533333333333333333358631380
-
-i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), lower than the true price of \( 2.0 \).
-
-#+NAME: test-cage-undercollateralised-dai-parity-debt
-#+BEGIN_SRC sol
-  function test_cage_undercollateralised_dai_parity_debt() public {
-      Usr ali = new Usr(vat, end, gemA);
-      Usr bob = new Usr(vat, end, gemA);
-
-      // make a CDP:
-      address urn1 = address(ali);
-      gemA.join(urn1, 10 ether);
-      ali.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
-      // this urn has 0 gem, 10 ink, 15 tab, 15 dai
-
-      // make a second CDP:
-      address urn2 = address(bob);
-      gemA.join(urn2, 1 ether);
-      bob.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
-      // this urn has 0 gem, 1 ink, 3 tab, 3 dai
-
-      // global checks:
-      assertEq(vat.debt(), rad(18 ether));
-      assertEq(vat.vice(), 0);
-
-      // tag and fix computation
-      uint hump = 0;
-      // CDP holders settled at price of 1.875
-      uint tag = 533333333333333333358631380;
-      // DAI holders get 1.0
-      uint fix = RAY / 2;
-      end.cage(hump);
-      end.cage("gold", tag, fix);
-      end.skim("gold", urn1);
-      end.skim("gold", urn2);
-
-      // local checks
-      assertEq(art("gold", urn1), 0);
-      assertEq(ink("gold", urn1), 2 ether);
-      assertEq(art("gold", urn2), 0);
-      assertEq(ink("gold", urn2), 0);
-      assertEq(vat.sin(address(end)), rad(18 ether));
-
-      // global checks
-      assertEq(vat.debt(), rad(18 ether));
-      assertEq(vat.vice(), rad(18 ether));
-
-      // CDP closing
-      ali.free("gold");
-      assertEq(ink("gold", urn1), 0);
-      assertEq(gem("gold", urn1), 2 ether);
-      ali.exit(address(this), 2 ether);
-
-      // first dai redemption
-      ali.shop(15 ether);
-
-      // global checks:
-      assertEq(vat.debt(), rad(3 ether));
-      assertEq(vat.vice(), rad(3 ether));
-
-      ali.pack("gold");
-      ali.cash("gold");
-
-      // local checks:
-      assertEq(dai(urn1), 0);
-      assertEq(gem("gold", urn1), rmul(fix, 15 ether));
-      ali.exit(address(this), rmul(fix, 15 ether));
-
-      // second dai redemption
-      bob.shop(3 ether);
-
-      // global checks:
-      assertEq(vat.debt(), 0);
-      assertEq(vat.vice(), 0);
-
-      bob.pack("gold");
-      bob.cash("gold");
-
-      // local checks:
-      assertEq(dai(urn2), 0);
-      assertEq(gem("gold", urn2), rmul(fix, 3 ether));
-      bob.exit(address(this), rmul(fix, 3 ether));
-
-      assertEq(gem("gold", address(end)), 0);
-      // some dust remains in the adapter because of rounding:
-      assertTrue(gold.balanceOf(address(gemA)) < 2);
-  }
-#+END_SRC
-
-** Testing auction yanking
 
 #+NAME: test-cage-skip
 #+BEGIN_SRC sol
@@ -1374,16 +1379,13 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       flip.tend(auction, 10 ether, rad(1 ether)); // bid 1 dai
       assertEq(dai(urn1), 14 ether);
 
-      // tag and fix computation
-      uint hump = 0;
-      uint tag = RAY / 5;
-      uint fix = RAY / 5;
-      end.cage(hump);
-      end.cage("gold", tag, fix);
+      // collateral price is 5
+      pip.poke(bytes32(5 * RAY));
+      end.cage();
+      end.cage("gold");
 
       end.skip("gold", auction);
       assertEq(dai(address(this)), 1 ether);       // bid refunded
-      assertEq(vat.vice(), 0);                     // sin is gone
       vat.move(address(this), urn1, rad(1 ether)); // return 1 dai to ali
 
       end.skim("gold", urn1);
@@ -1391,8 +1393,12 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       // local checks:
       assertEq(art("gold", urn1), 0);
       assertEq(ink("gold", urn1), 7 ether);
-      assertEq(vat.sin(address(end)), rad(15 ether));
+      assertEq(vat.sin(address(vow)), rad(30 ether));
 
+      // balance the vow
+      vow.flog(uint48(now));
+      vow.heal(min(vow.Joy(), vow.Woe()));
+      vow.kiss(min(vow.Joy(), vow.Ash()));
       // global checks:
       assertEq(vat.debt(), rad(15 ether));
       assertEq(vat.vice(), rad(15 ether));
@@ -1403,7 +1409,13 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
       assertEq(gem("gold", urn1), 7 ether);
       ali.exit(address(this), 7 ether);
 
+      hevm.warp(1 hours);
+      end.thaw();
+      end.flow("gold");
+      assertTrue(end.fixs("gold") != 0);
+
       // dai redemption
+      ali.hope(address(end));
       ali.shop(15 ether);
 
       // global checks:
@@ -1424,17 +1436,168 @@ i.e. CDPs are settled at an implied price of \( 0.533\ldots^{-1} = 1.875 \), low
   }
 #+END_SRC
 
+** Testing surplus and deficit
+
+#+NAME: test-cage-collateralised-deficit
+#+BEGIN_SRC sol
+  function test_cage_collateralised_deficit() public {
+      Usr ali = new Usr(vat, end, gemA);
+
+      // make a CDP:
+      address urn1 = address(ali);
+      gemA.join(urn1, 10 ether);
+      ali.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
+      // ali's urn has 0 gem, 10 ink, 15 tab, 15 dai
+      // suck 1 dai and give to ali
+      vat.suck(address(vow), address(ali), rad(1 ether));
+
+      // global checks:
+      assertEq(vat.debt(), rad(16 ether));
+      assertEq(vat.vice(), rad(1 ether));
+
+      // collateral price is 5
+      pip.poke(bytes32(5 * RAY));
+      end.cage();
+      end.cage("gold");
+      end.skim("gold", urn1);
+
+      // local checks:
+      assertEq(art("gold", urn1), 0);
+      assertEq(ink("gold", urn1), 7 ether);
+      assertEq(vat.sin(address(vow)), rad(16 ether));
+
+      // global checks:
+      assertEq(vat.debt(), rad(16 ether));
+      assertEq(vat.vice(), rad(16 ether));
+
+      // CDP closing
+      ali.free("gold");
+      assertEq(ink("gold", urn1), 0);
+      assertEq(gem("gold", urn1), 7 ether);
+      ali.exit(address(this), 7 ether);
+
+      hevm.warp(1 hours);
+      end.thaw();
+      end.flow("gold");
+      assertTrue(end.fixs("gold") != 0);
+
+      // dai redemption
+      ali.hope(address(end));
+      ali.shop(16 ether);
+
+      // global checks:
+      assertEq(vat.debt(), 0);
+      assertEq(vat.vice(), 0);
+
+      ali.pack("gold");
+      ali.cash("gold");
+
+      // local checks:
+      assertEq(dai(urn1), 0);
+      assertEq(gem("gold", urn1), 3 ether);
+      ali.exit(address(this), 3 ether);
+
+      assertEq(gem("gold", address(end)), 0);
+      assertEq(gold.balanceOf(address(gemA)), 0);
+  }
+#+END_SRC
+
+#+NAME: test-cage-undercollateralised-surplus
+#+BEGIN_SRC sol
+  function test_cage_undercollateralised_surplus() public {
+      Usr ali = new Usr(vat, end, gemA);
+      Usr bob = new Usr(vat, end, gemA);
+
+      // make a CDP:
+      address urn1 = address(ali);
+      gemA.join(urn1, 10 ether);
+      ali.frob("gold", urn1, urn1, urn1, 10 ether, 15 ether);
+      // ali's urn has 0 gem, 10 ink, 15 tab, 15 dai
+      // alive gives one dai to the vow, creating surplus
+      ali.move(address(ali), address(vow), rad(1 ether));
+
+      // make a second CDP:
+      address urn2 = address(bob);
+      gemA.join(urn2, 1 ether);
+      bob.frob("gold", urn2, urn2, urn2, 1 ether, 3 ether);
+      // bob's urn has 0 gem, 1 ink, 3 tab, 3 dai
+
+      // global checks:
+      assertEq(vat.debt(), rad(18 ether));
+      assertEq(vat.vice(), 0);
+
+      // collateral price is 2
+      pip.poke(bytes32(2 * RAY));
+      end.cage();
+      end.cage("gold");
+      end.skim("gold", urn1);
+      // undercollateralised CDP is bailed
+      end.bail("gold", urn2);
+
+      // local checks
+      assertEq(art("gold", urn1), 0);
+      assertEq(ink("gold", urn1), 2.5 ether);
+      assertEq(art("gold", urn2), 0);
+      assertEq(ink("gold", urn2), 0);
+      assertEq(vat.sin(address(vow)), rad(18 ether));
+
+      // global checks
+      assertEq(vat.debt(), rad(18 ether));
+      assertEq(vat.vice(), rad(18 ether));
+
+      // CDP closing
+      ali.free("gold");
+      assertEq(ink("gold", urn1), 0);
+      assertEq(gem("gold", urn1), 2.5 ether);
+      ali.exit(address(this), 2.5 ether);
+
+      hevm.warp(1 hours);
+      // vent to absorb the surplus
+      vow.heal(rad(1 ether));
+      end.thaw();
+      end.flow("gold");
+      assertTrue(end.fixs("gold") != 0);
+
+      // first dai redemption
+      ali.hope(address(end));
+      ali.shop(14 ether);
+
+      // global checks:
+      assertEq(vat.debt(), rad(3 ether));
+      assertEq(vat.vice(), rad(3 ether));
+
+      ali.pack("gold");
+      ali.cash("gold");
+
+      // local checks:
+      assertEq(dai(urn1), 0);
+      uint256 fix = end.fixs("gold");
+      assertEq(gem("gold", urn1), rmul(fix, 14 ether));
+      ali.exit(address(this), rmul(fix, 14 ether));
+
+      // second dai redemption
+      bob.hope(address(end));
+      bob.shop(3 ether);
+
+      // global checks:
+      assertEq(vat.debt(), 0);
+      assertEq(vat.vice(), 0);
+
+      bob.pack("gold");
+      bob.cash("gold");
+
+      // local checks:
+      assertEq(dai(urn2), 0);
+      assertEq(gem("gold", urn2), rmul(fix, 3 ether));
+      bob.exit(address(this), rmul(fix, 3 ether));
+
+      // nothing left in the End
+      assertEq(gem("gold", address(end)), 0);
+      assertEq(gold.balanceOf(address(gemA)), 0);
+  }
+#+END_SRC
+
 * Further Work
-
-** Dai-parity by socialising proportionally to collateral
-
-Here, well-collateralised CDPs are effectively used to bail out undercollaterised positions. This mechanism is already in use in the current, single collateral, version of Dai.
-
-** Dai-parity by socialising proportionally to equity
-
-This would be a novel mechanism, similar to collateral-proportional, but instead considering the /equity/ of a CDP:
-
-\[ {\tt E_{iu}} = {\tt art_{iu}} \cdot {\tt rate_i} - p_{{\tt i}} \cdot {\tt ink_i} \]
 
 ** NFT Settlement Modules (TODO)
 
